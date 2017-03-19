@@ -1,5 +1,6 @@
 #!/usr/bin/env python
-
+#coding=utf-8
+#启动工作节点用的,但是启动的参数还需要研究一下
 import os
 import sys
 import resource
@@ -37,7 +38,7 @@ def driller_node(n, outfile, errfile):
 
     with open(outfile, "w") as o:
         with open(errfile, "w") as e:
-            subprocess.Popen(args, stdout=o, stderr=e)
+            subprocess.Popen(args, stdout=o, stderr=e) #启动一个worker
 
 def fuzzer_node(n, outfile, errfile):
 

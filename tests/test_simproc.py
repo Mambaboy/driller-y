@@ -1,3 +1,4 @@
+#coding=utf-8
 import nose
 import driller
 import simuvex

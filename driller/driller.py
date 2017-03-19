@@ -1,19 +1,21 @@
+#coding=utf-8
+import angr
+from itertools import islice, izip
 import logging
+import os
+import signal
+import time
+import tracer
+
+import config  # pylint:disable=relative-import  导入import模块
+
+import cPickle as pickle
+import resource
+
 
 l = logging.getLogger("driller.Driller")
 
-import tracer
 
-import angr
-
-import os
-import time
-import signal
-import resource
-import cPickle as pickle
-from itertools import islice, izip
-
-import config #pylint:disable=relative-import
 
 class DrillerEnvironmentError(Exception):
     pass
@@ -31,31 +33,31 @@ class Driller(object):
         :param binary: the binary to be traced
         :param input: input string to feed to the binary
         :param fuzz_bitmap: AFL's bitmap of state transitions (defaults to empty)
-        :param redis: redis.Redis instance for coordinating multiple Driller instances
+        :param redis: redis.Redis instance for coordinating multiple Driller instances  
         :param hooks: dictionary of addresses to simprocedures
         '''
 
         self.binary      = binary
         # redis channel identifier
-        self.identifier  = os.path.basename(binary)
+        self.identifier  = os.path.basename(binary) #去除路径信息,得到程序名称
         self.input       = input
-        self.fuzz_bitmap = fuzz_bitmap
-        self.tag         = tag
-        self.redis       = redis
+        self.fuzz_bitmap = fuzz_bitmap   #AFL bitmap 默认全时\xff
+        self.tag         = tag  # fuzzer-master,src:000108 这样的
+        self.redis       = redis  #一个redis连接实例
 
-        self.base = os.path.join(os.path.dirname(__file__), "..")
+        self.base = os.path.join(os.path.dirname(__file__), "..") #本模块所在目录的上一级, 即driller部分内
 
         # the simprocedures
         self._hooks = {} if hooks is None else hooks
 
-        # set of encountered basic block transition
-        self._encounters = set()
+        # set of encountered basic block transition  
+        self._encounters = set()  #记录了测试用例的基本块跳转关系, 这个和bitmap好像是一样的吧?
 
         # start time, set by drill method
         self.start_time       = time.time()
 
         # set of all the generated inputs
-        self._generated       = set()
+        self._generated       = set() #新建一个set集合 ,保存了符号执行发现的新的测试用例
 
         # set the memory limit specified in the config
         if config.MEM_LIMIT is not None:
@@ -63,10 +65,10 @@ class Driller(object):
 
         l.info("[%s] drilling started on %s", self.identifier, time.ctime(self.start_time))
 
-        self.fuzz_bitmap_size = len(self.fuzz_bitmap)
+        self.fuzz_bitmap_size = len(self.fuzz_bitmap) # 和AFL中的这个数组大小一样,这里不一定是65536个字节
 
         # setup directories for the driller and perform sanity checks on the directory structure here
-        if not self._sane():
+        if not self._sane(): #确定目标的可执行,读取执行权限
             l.error("[%s] environment or parameters are unfit for a driller run", self.identifier)
             raise DrillerEnvironmentError
 
@@ -74,7 +76,7 @@ class Driller(object):
 
     def _sane(self):
         '''
-        make sure the environment will allow us to run without any hitches
+        make sure the environment will allow us to run without any hitches(故障) 
         '''
         ret = True
 
@@ -91,19 +93,23 @@ class Driller(object):
         '''
         perform the drilling, finding more code coverage based off our existing input base.
         '''
-
-        if self.redis and self.redis.sismember(self.identifier + '-traced', self.input):
+        l.info("start drill funtion")
+        #sismember 函数, 检查value是否是name对应的集合内的元素, 即检查对应内容的测试用例是否被符号执行过
+        if self.redis and self.redis.sismember(self.identifier + '-traced', self.input):  # self.identifier + '-traced'作为集合名,input作为元素.
             # don't re-trace the same input
+            l.info("redis has not started or this input has be traced")
             return -1
 
         # update traced
         if self.redis:
-            self.redis.sadd(self.identifier + '-traced', self.input)
-
-        list(self._drill_input())
-
-        if self.redis:
-            return len(self._generated)
+            #sadd函数, 给第一个参数制定的集合添加元素, 后面的参数全是元素, 提交当前测试用例,用来标记已经符号执行过了
+            self.redis.sadd(self.identifier + '-traced', self.input) #在redis中维护了一个数据结构,程序名称加'-traced'用来表示key
+        
+        #接下来生成新的测试用例, 此时的bitmap是固定的,这里没有返回值,但是应该也可以利用这些返回值的
+        list(self._drill_input()) #  yield, 在原来的路径基础上,又多走了几步.
+        #结果保存在 self._generated
+        if self.redis: #如果服务器存在
+            return len(self._generated) 
         else:
             return self._generated
 
@@ -124,59 +130,75 @@ class Driller(object):
         symbolically step down a path with a tracer, trying to concretize inputs for unencountered
         state transitions.
         '''
-
+        l.info("start _drill_input fucntion")
         # initialize the tracer
-        t = tracer.Tracer(self.binary, self.input, hooks=self._hooks)
-
-        self._set_concretizations(t)
-        self._set_simproc_limits(t)
-
+        l.info("start the tracer")
+        t = tracer.Tracer(self.binary, self.input, hooks=self._hooks) #利用qemu模拟,得到一条路径trace,由一系列的地址构成
+        l.info("tracer end")
+        #这个trace是利用qemu跑一遍获得基本块链表,还没有符号执行
+        l.info("something about unicorn")
+        self._set_concretizations(t) #具体化? 得到一些测试用例? 这个还不是很清楚,和unicorn有关
+        self._set_simproc_limits(t) #设置了一些libc库的上限
+        l.info("something about unicorn end ")
         # update encounters with known state transitions
-        self._encounters.update(izip(t.trace, islice(t.trace, 1, None)))
-
+        # t.trace是基本块的一个有序列表
+        # islice(iterable, start, stop[, step])  islice(t.trace, 1, None)对一个list进行筛选, 去掉第一个基本块, stop是不达到的
+        # izip可以生成两个迭代器之间的关系,生成dict形式的元素, izip的结果还是保持有序性的
+        # 这样生成基本块之间的跳跃
+#         for item in izip(t.trace, islice(t.trace, 1, None)):  
+#             print item #by yyy
+        #update后没有了有序性, 因为set是一个有序集合, 有排列顺序的
+        self._encounters.update(izip(t.trace, islice(t.trace, 1, None))) #izip 把不同的迭代器元素聚合到一个迭代器
+#         for item in self._encounters:  
+#             print item #by yyy
+        l.info("drilling into %r", self.input)
         l.debug("drilling into %r", self.input)
+        l.info("input is %r", self.input)
         l.debug("input is %r", self.input)
 
+
+        #开始寻找下一个新的测试用例了
         # used for finding the right index in the fuzz_bitmap
         prev_loc = 0
-
-        branches = t.next_branch()
+        
+        branches = t.next_branch() # tracer.Tracer 下的函数, branches是 PathGroup类  get some missed state
         while len(branches.active) > 0 and t.bb_cnt < len(t.trace):
 
             # check here to see if a crash has been found
-            if self.redis and self.redis.sismember(self.identifier + "-finished", True):
-                return
-
-            # mimic AFL's indexing scheme
-            if len(branches.missed) > 0:
-                prev_addr = branches.missed[0].addr_trace[-1] # a bit ugly
+            if self.redis and self.redis.sismember(self.identifier + "-finished", True):  #这里的crash由谁保存的?和AFL的crash冲突吗
+                return  #表示当前路径是crash,不用继续了
+            #missed中保存了错过的路径
+            # mimic AFL's indexing scheme  模仿AFL中的插桩记录手法, 即将发现的新的branch,生成一个新的基本块跳转
+            if len(branches.missed) > 0:  
+                prev_addr = branches.missed[0].addr_trace[-1] # a bit ugly #上一个基本块的地址, 这个是history记录的
                 prev_loc = prev_addr
                 prev_loc = (prev_loc >> 4) ^ (prev_loc << 8)
                 prev_loc &= self.fuzz_bitmap_size - 1
                 prev_loc = prev_loc >> 1
-                for path in branches.missed:
-                    cur_loc = path.addr
+                for path in branches.missed: 
+                    cur_loc = path.addr #当前基本块的地址
                     cur_loc = (cur_loc >> 4) ^ (cur_loc << 8)
                     cur_loc &= self.fuzz_bitmap_size - 1
 
-                    hit = bool(ord(self.fuzz_bitmap[cur_loc ^ prev_loc]) ^ 0xff)
+                    hit = bool(ord(self.fuzz_bitmap[cur_loc ^ prev_loc]) ^ 0xff)  #ord返回ascii码, 这里即判断0还是非0 击中表示存在吧?
 
                     transition = (prev_addr, path.addr)
 
+                    l.info("found %x -> %x transition", transition[0], transition[1])
                     l.debug("found %x -> %x transition", transition[0], transition[1])
 
                     if not hit and not self._has_encountered(transition) and not self._has_false(path):
-                        t.remove_preconstraints(path)
+                        t.remove_preconstraints(path)  #这里代表发现新的路径了
 
                         if path.state.satisfiable():
                             # a completely new state transitions, let's try to accelerate AFL
                             # by finding  a number of deeper inputs
-                            l.info("found a completely new transition, exploring to some extent")
-                            w = self._writeout(prev_addr, path)
+                            l.info("found a completely new transition, exploring to some extent")#再前进一定的步数
+                            w = self._writeout(prev_addr, path) #输出新测试用例到redis数据库,w是一个tuple,一个是信息,第二个是生成的内容
                             if w is not None:
-                                yield w
-                            for i in self._symbolic_explorer_stub(path):
-                                yield i
+                                yield w  # 生成器, 返回的是一个tuple, 有关于新的测试用例
+                            for i in self._symbolic_explorer_stub(path): #找到一条新的路径之后,继续符号执行一定的步数至再产生累计1024个state
+                                yield i # 生成器
                         else:
                             l.debug("path to %#x was not satisfiable", transition[1])
 
@@ -184,7 +206,7 @@ class Driller(object):
                         l.debug("%x -> %x has already been encountered", transition[0], transition[1])
 
             try:
-                branches = t.next_branch()
+                branches = t.next_branch()  # go on find the next branch
             except IndexError:
                 branches.active = [ ]
 
@@ -200,21 +222,21 @@ class Driller(object):
 
         l.info("[%s] started symbolic exploration at %s", self.identifier, time.ctime())
 
-        while len(pg.active) and accumulated < 1024:
+        while len(pg.active) and accumulated < 1024: #这里不断的探索
             pg.step()
             steps += 1
 
             # dump all inputs
 
-            accumulated = steps * (len(pg.active) + len(pg.deadended))
+            accumulated = steps * (len(pg.active) + len(pg.deadended)) #这里是一种探索方式的上限
 
         l.info("[%s] symbolic exploration stopped at %s", self.identifier, time.ctime())
 
-        pg.stash(from_stash='deadended', to_stash='active')
-        for dumpable in pg.active:
+        pg.stash(from_stash='deadended', to_stash='active') #为什么这么移动? deadended是行不通的路
+        for dumpable in pg.active: #dumpable是 path 类型的
             try:
-                if dumpable.state.satisfiable():
-                    w = self._writeout(dumpable.addr_trace[-1], dumpable)
+                if dumpable.state.satisfiable(): #如果是可满足的
+                    w = self._writeout(dumpable.addr_trace[-1], dumpable) 
                     if w is not None:
                         yield w
             except IndexError: # if the path we're trying to dump wasn't actually satisfiable
@@ -233,12 +255,12 @@ class Driller(object):
         state.libc.max_buffer_size = 0x100000
 
     @staticmethod
-    def _set_concretizations(t):
+    def _set_concretizations(t): 
         state = t.path_group.one_active.state
-        flag_vars = set()
-        for b in t.cgc_flag_bytes:
-            flag_vars.update(b.variables)
-        state.unicorn.always_concretize.update(flag_vars)
+        flag_vars = set() #增加的是符号对象的名称
+        for b in t.cgc_flag_bytes: #cgc的符号对象, tracer中搞了4096个字节的符号对象, b是 BV 类  update是添加到set中
+            flag_vars.update(b.variables)  # b.variables is from Base class, 好像是符号对象的名称
+        state.unicorn.always_concretize.update(flag_vars) # 添加符号变量的名称 添加到 Unicorn 的 always_concretize set中
         # let's put conservative thresholds for now
         state.unicorn.concretization_threshold_memory = 50000
         state.unicorn.concretization_threshold_registers = 50000
@@ -283,7 +305,7 @@ class Driller(object):
         # no redis = no catalogue
 
     def _writeout(self, prev_addr, path):
-        t_pos = path.state.posix.files[0].pos
+        t_pos = path.state.posix.files[0].pos #妈的, 这个是什么意思呢
         path.state.posix.files[0].seek(0)
         # read up to the length
         generated = path.state.posix.read_from(0, t_pos)
@@ -302,13 +324,13 @@ class Driller(object):
 
         l.info("[%s] dumping input for %x -> %x", self.identifier, prev_addr, path.addr)
 
-        self._generated.add((key, generated))
+        self._generated.add((key, generated)) #保存结果
 
         if self.redis:
             # publish it out in real-time so that inputs get there immediately
             channel = self.identifier + '-generated'
 
-            self.redis.publish(channel, pickle.dumps({'meta': key, 'data': generated, "tag": self.tag}))
+            self.redis.publish(channel, pickle.dumps({'meta': key, 'data': generated, "tag": self.tag})) #将结果发送到服务器
         else:
             l.info("generated: %s", generated.encode('hex'))
 
