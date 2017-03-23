@@ -12,10 +12,8 @@ import config  # pylint:disable=relative-import  导入import模块
 import cPickle as pickle
 import resource
 
-
 l = logging.getLogger("driller.Driller")
-
-
+l.setLevel(logging.DEBUG)
 
 class DrillerEnvironmentError(Exception):
     pass
@@ -136,10 +134,11 @@ class Driller(object):
         t = tracer.Tracer(self.binary, self.input, hooks=self._hooks) #利用qemu模拟,得到一条路径trace,由一系列的地址构成
         l.info("tracer end")
         #这个trace是利用qemu跑一遍获得基本块链表,还没有符号执行
-        l.info("something about unicorn")
+        
+        
         self._set_concretizations(t) #具体化? 得到一些测试用例? 这个还不是很清楚,和unicorn有关
         self._set_simproc_limits(t) #设置了一些libc库的上限
-        l.info("something about unicorn end ")
+        
         # update encounters with known state transitions
         # t.trace是基本块的一个有序列表
         # islice(iterable, start, stop[, step])  islice(t.trace, 1, None)对一个list进行筛选, 去掉第一个基本块, stop是不达到的
@@ -151,11 +150,10 @@ class Driller(object):
         self._encounters.update(izip(t.trace, islice(t.trace, 1, None))) #izip 把不同的迭代器元素聚合到一个迭代器
 #         for item in self._encounters:  
 #             print item #by yyy
-        l.info("drilling into %r", self.input)
-        l.debug("drilling into %r", self.input)
-        l.info("input is %r", self.input)
-        l.debug("input is %r", self.input)
 
+        l.debug("drilling into %r", self.input)
+        l.debug("input is %r", self.input)
+        l.info("drilling into %r",self.tag)
 
         #开始寻找下一个新的测试用例了
         # used for finding the right index in the fuzz_bitmap
@@ -184,7 +182,6 @@ class Driller(object):
 
                     transition = (prev_addr, path.addr)
 
-                    l.info("found %x -> %x transition", transition[0], transition[1])
                     l.debug("found %x -> %x transition", transition[0], transition[1])
 
                     if not hit and not self._has_encountered(transition) and not self._has_false(path):

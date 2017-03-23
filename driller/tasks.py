@@ -13,8 +13,8 @@ import redis
 from driller import Driller
 import pcap
 
-
 l = logging.getLogger("driller.tasks")
+#l.setLevel(logging.DEBUG)
 
 backend_url = "redis://%s:%d" % (config.REDIS_HOST, config.REDIS_PORT) #
 app = Celery('tasks', broker=config.BROKER_URL, backend=backend_url)
@@ -82,7 +82,7 @@ def request_drilling(fzr):  #可能会有多个实例,所以要这么做
     ##to assure the file is exit
     l.info("waiting for fuzz_bitmap")
     while not os.path.exists(bitmap_f):
-        time.sleep(5)   
+        time.sleep(2)   
     ##end--------------------------------------------------------
     l.info("fuzz_bitmap is generated, go on")
     
@@ -204,12 +204,13 @@ def fuzz(binary): #这里的参数只有程序名称,所以主函数的目标程
         driller_jobs = [ ] #这里符号执行生成测试用例结果方面的内容
 
         # start the fuzzer and poll for a crash, timeout, or driller assistance  
-        while not fzr.found_crash() and not fzr.timed_out():  # 没有发现crash,且没有timeout,进入  难道有crash就不进入了吗  此时afl不会暂停, 继续跑
+        #while not fzr.found_crash() and not fzr.timed_out():  # 没有发现crash,且没有timeout,进入  难道有crash就不进入了吗  此时afl不会暂停, 继续跑
+        while not fzr.timed_out():  # 没有发现crash,且没有timeout,进入  难道有crash就不进入了吗  此时afl不会暂停, 继续跑
             # check to see if driller should be invoked
             # if 'fuzzer-1' in fzr.stats and 'pending_favs' in fzr.stats['fuzzer-1']:  # 'fuzzer-1' 表示第二个afl了
             if 'fuzzer-master' in fzr.stats and 'pending_favs' in fzr.stats['fuzzer-master']:  
                 # if not int(fzr.stats['fuzzer-1']['pending_favs']) > 0:  #判断 pending_favs 路径的数量 小于 0时,就调用符号引擎, 对应afl的 pending_favored变量,即表示感兴趣的路径
-                if not int(fzr.stats['fuzzer-master']['pending_favs']) > 500:  # 判断 pending_favs 路径的数量 小于 0时,就调用符号引擎, 对应afl的 pending_favored变量,即表示感兴趣的路径
+                if not int(fzr.stats['fuzzer-master']['pending_favs']) > 510:  # 判断 pending_favs 路径的数量 小于 0时,就调用符号引擎, 对应afl的 pending_favored变量,即表示感兴趣的路径
                     l.info("[%s] driller being requested!", binary) #显示需要
                     driller_jobs.extend(request_drilling(fzr))  # 调用符号执行, extend表示在list末尾添加多个值
 
