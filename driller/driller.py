@@ -107,7 +107,7 @@ class Driller(object):
         list(self._drill_input()) #  yield, 在原来的路径基础上,又多走了几步.
         #结果保存在 self._generated
         if self.redis: #如果服务器存在
-            return len(self._generated) 
+            return len(self._generated)  # 0 利用这个初始测试用例没有办法发现新的路径
         else:
             return self._generated
 
@@ -160,8 +160,8 @@ class Driller(object):
         prev_loc = 0
         
         branches = t.next_branch() # tracer.Tracer 下的函数, branches是 PathGroup类  get some missed state
-        while len(branches.active) > 0 and t.bb_cnt < len(t.trace):
-
+        while len(branches.active) > 0 and t.bb_cnt < len(t.trace): #初始测试用例不好,不一定能发现新的路径
+            #t.bb_cnt 有时候会一直没有增加,可能是因为系统调用
             # check here to see if a crash has been found
             if self.redis and self.redis.sismember(self.identifier + "-finished", True):  #这里的crash由谁保存的?和AFL的crash冲突吗
                 return  #表示当前路径是crash,不用继续了
@@ -177,8 +177,8 @@ class Driller(object):
                     cur_loc = path.addr #当前基本块的地址
                     cur_loc = (cur_loc >> 4) ^ (cur_loc << 8)
                     cur_loc &= self.fuzz_bitmap_size - 1
-
-                    hit = bool(ord(self.fuzz_bitmap[cur_loc ^ prev_loc]) ^ 0xff)  #ord返回ascii码, 这里即判断0还是非0 击中表示存在吧?
+                    #表示是否击中旧的基本块
+                    hit = bool(ord(self.fuzz_bitmap[cur_loc ^ prev_loc]) ^ 0xff)  #ord返回ascii码, 判断对应的基本块是否被afl发现了? true表示被发现的
 
                     transition = (prev_addr, path.addr)
 
@@ -191,6 +191,7 @@ class Driller(object):
                             # a completely new state transitions, let's try to accelerate AFL
                             # by finding  a number of deeper inputs
                             l.info("found a completely new transition, exploring to some extent")#再前进一定的步数
+                            #发现的路径信息会不会记录到fuzz_bitmap中区
                             w = self._writeout(prev_addr, path) #输出新测试用例到redis数据库,w是一个tuple,一个是信息,第二个是生成的内容
                             if w is not None:
                                 yield w  # 生成器, 返回的是一个tuple, 有关于新的测试用例
@@ -262,11 +263,11 @@ class Driller(object):
         state.unicorn.concretization_threshold_memory = 50000
         state.unicorn.concretization_threshold_registers = 50000
 
-    def _has_encountered(self, transition):
+    def _has_encountered(self, transition): #判断参数指定的基本块跳跃关系,是否已经存在
         return transition in self._encounters
 
     @staticmethod
-    def _has_false(path):
+    def _has_false(path): #这里需要判定路径是否满足要求? 去掉预约束后,路径是否可行
         # check if the path is unsat even if we remove preconstraints
         claripy_false = path.state.se.false
         if path.state.scratch.guard.cache_key == claripy_false.cache_key:

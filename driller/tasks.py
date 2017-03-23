@@ -37,8 +37,8 @@ def get_fuzzer_id(input_data_path): #get testcase-id in the queue catalog 删减
 @app.task
 def drill(binary, input_data, bitmap_hash, tag):
     redis_inst = redis.Redis(connection_pool=redis_pool) #连接redis数据库
-    fuzz_bitmap = redis_inst.hget(binary + '-bitmaps', bitmap_hash) #get the bitmap  在request_drilling是上传的,也算是即时从文件中读取的
-
+    #fuzz_bitmap = redis_inst.hget(binary + '-bitmaps', bitmap_hash) #get the bitmap  在request_drilling是上传的,也算是即时从文件中读取的
+    fuzz_bitmap="\xff" * 65535
     binary_path = os.path.join(config.BINARY_DIR, binary) #目标程序路径
     #配置driller信息
     driller = Driller(binary_path, input_data, fuzz_bitmap, tag, redis=redis_inst) #tag是 类如 fuzzer-master,src:000108
@@ -48,14 +48,15 @@ def drill(binary, input_data, bitmap_hash, tag):
         l.error("encountered %r exception when drilling into \"%s\"", e, binary) #遇见错误
         l.error("input was %r", input_data)
 
-def input_filter(fuzzer_dir, inputs):
+def input_filter(fuzzer_dir, inputs): #这个函数在task中,也没有考虑到非字符串的情况
 
     traced_cache = os.path.join(fuzzer_dir, "traced")
 
     traced_inputs = set()
     if os.path.isfile(traced_cache):
         with open(traced_cache, 'rb') as f:
-            traced_inputs = set(f.read().split('\n'))
+            #这里可能可以改成hash的形式
+            traced_inputs = set(f.read().split('\n')) #分隔符默认为所有的空字符 这里为什么要分割?
 
     new_inputs = filter(lambda i: i not in traced_inputs, inputs)
 
@@ -73,16 +74,17 @@ def request_drilling(fzr):  #可能会有多个实例,所以要这么做
     :return: list of celery AsyncResults, we accumulate these so we can revoke them if need be
     '''
 
-    d_jobs = [ ] #drill job, 表示每次增加的测试用例个数
+    d_jobs = [ ] #利用一个测试用例发现新路径的数量
 
 #   bitmap_f = os.path.join(fzr.out_dir, "fuzzer-1", "fuzz_bitmap")
-    bitmap_f = os.path.join(fzr.out_dir, "fuzzer-master", "fuzz_bitmap") #怎么没有生成fuzz_bitmap文件, 不会立刻生成
+    bitmap_f = os.path.join(fzr.out_dir, "fuzzer-master", "fuzz_bitmap") 
     
     ##add by yyy---------------------------------------------------
     ##to assure the file is exit
     l.info("waiting for fuzz_bitmap")
     while not os.path.exists(bitmap_f):
-        time.sleep(2)   
+        pass
+        #time.sleep(2)   
     ##end--------------------------------------------------------
     l.info("fuzz_bitmap is generated, go on")
     
@@ -90,7 +92,7 @@ def request_drilling(fzr):  #可能会有多个实例,所以要这么做
     bitmap_hash = hashlib.sha256(bitmap_data).hexdigest() #文件内容的hash
 
     redis_inst = redis.Redis(connection_pool=redis_pool) #一个链接实例
-    redis_inst.hset(fzr.binary_id + '-bitmaps', bitmap_hash, bitmap_data) #发送bitmap,  hset function 一个name对应一个dic来存储 , 发布到池子里
+    redis_inst.hset(fzr.binary_id + '-bitmaps', bitmap_hash, bitmap_data) #发送bitmap, hset function 一个name对应一个dic来存储 , 发布到池子里
 
     #in_dir = os.path.join(fzr.out_dir, "fuzzer-1", "queue")
     in_dir = os.path.join(fzr.out_dir, "fuzzer-master", "queue") #AFL生成测试用例的目录
@@ -108,7 +110,7 @@ def request_drilling(fzr):  #可能会有多个实例,所以要这么做
         input_data = open(input_data_path, "rb").read() #读取测试用例内容
         #d_jobs.append(drill.delay(fzr.binary_id, input_data, bitmap_hash, get_fuzzer_id(input_data_path)))
         d_jobs.append(drill(fzr.binary_id, input_data, bitmap_hash, get_fuzzer_id(input_data_path))) #这里只传bitmap_hash, 具体内容通过redis传
-
+        #这里应该可以通过某一种机制,将结果告诉afl, 然后afl就可以用了
     return d_jobs
 
 def start_listener(fzr):
@@ -159,13 +161,13 @@ def fuzz(binary): #这里的参数只有程序名称,所以主函数的目标程
     ##add by yyy---------------------------------
     ## setup the seed testcase
     #seeds = ["fuzz"] # 初始测试用例
-    seeds=list()
+    seeds=[]
     seed_dir = config.SEED
     for seed in os.listdir(seed_dir):  # 遍历多个目标程序, 这里是程序名称
         # 复制seed到input目录
-        with open(os.path.join(seed_dir, seed), 'rb') as f:
-            seeds+= set(f.read().split('\n'))
-    seeds.remove('')        
+        with open(os.path.join(seed_dir, seed), 'rb') as f:  #b 表示一个二进制文件
+            seeds.append(f.read())
+            f.close()
     ##end--------------------------------------------------------
     
     ##annotation by yyy----------------------------------------------
@@ -201,20 +203,22 @@ def fuzz(binary): #这里的参数只有程序名称,所以主函数的目标程
         clean_redis(fzr)
 
         # list of 'driller request' each is a celery async result object
-        driller_jobs = [ ] #这里符号执行生成测试用例结果方面的内容
+        driller_jobs = [ ] #记录每次调用driller后的结果
 
         # start the fuzzer and poll for a crash, timeout, or driller assistance  
-        #while not fzr.found_crash() and not fzr.timed_out():  # 没有发现crash,且没有timeout,进入  难道有crash就不进入了吗  此时afl不会暂停, 继续跑
-        while not fzr.timed_out():  # 没有发现crash,且没有timeout,进入  难道有crash就不进入了吗  此时afl不会暂停, 继续跑
+        #while not fzr.found_crash() and not fzr.timed_out():  # 此时afl不会暂停, 继续跑
+        while not fzr.timed_out():  # 此时afl不会暂停, 继续跑; 可以自定义退出条件
             # check to see if driller should be invoked
             # if 'fuzzer-1' in fzr.stats and 'pending_favs' in fzr.stats['fuzzer-1']:  # 'fuzzer-1' 表示第二个afl了
             if 'fuzzer-master' in fzr.stats and 'pending_favs' in fzr.stats['fuzzer-master']:  
-                # if not int(fzr.stats['fuzzer-1']['pending_favs']) > 0:  #判断 pending_favs 路径的数量 小于 0时,就调用符号引擎, 对应afl的 pending_favored变量,即表示感兴趣的路径
-                if not int(fzr.stats['fuzzer-master']['pending_favs']) > 510:  # 判断 pending_favs 路径的数量 小于 0时,就调用符号引擎, 对应afl的 pending_favored变量,即表示感兴趣的路径
-                    l.info("[%s] driller being requested!", binary) #显示需要
-                    driller_jobs.extend(request_drilling(fzr))  # 调用符号执行, extend表示在list末尾添加多个值
-
-            time.sleep(config.CRASH_CHECK_INTERVAL)
+                # if not int(fzr.stats['fuzzer-1']['pending_favs']) > 0:  #判断 pending_favs 路径的数量 对应afl的 pending_favored变量,即表示感兴趣的路径
+                if not int(fzr.stats['fuzzer-master']['pending_favs']) > 510:
+                    l.info("[%s] driller being requested!", binary) 
+                    driller_jobs.extend(request_drilling(fzr))  #调用符号执行, extend表示在list末尾添加多个值
+                    
+                    
+                    
+            time.sleep(config.CRASH_CHECK_INTERVAL) #间隔时间
 
         # make sure to kill the fuzzers when we're done
         fzr.kill()
