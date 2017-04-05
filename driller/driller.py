@@ -130,9 +130,9 @@ class Driller(object):
         '''
         l.info("start _drill_input fucntion")
         # initialize the tracer
-        l.info("start the tracer")
+        
         t = tracer.Tracer(self.binary, self.input, hooks=self._hooks) #利用qemu模拟,得到一条路径trace,由一系列的地址构成
-        l.info("tracer end")
+        
         #这个trace是利用qemu跑一遍获得基本块链表,还没有符号执行
         
         
