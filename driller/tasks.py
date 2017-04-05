@@ -212,7 +212,7 @@ def fuzz(binary): #这里的参数只有程序名称,所以主函数的目标程
             # if 'fuzzer-1' in fzr.stats and 'pending_favs' in fzr.stats['fuzzer-1']:  # 'fuzzer-1' 表示第二个afl了
             if 'fuzzer-master' in fzr.stats and 'pending_favs' in fzr.stats['fuzzer-master']:  
                 # if not int(fzr.stats['fuzzer-1']['pending_favs']) > 0:  #判断 pending_favs 路径的数量 对应afl的 pending_favored变量,即表示感兴趣的路径
-                if not int(fzr.stats['fuzzer-master']['pending_favs']) > 510:
+                if not int(fzr.stats['fuzzer-master']['pending_favs']) > 510000:
                     l.info("[%s] driller being requested!", binary) 
                     driller_jobs.extend(request_drilling(fzr))  #调用符号执行, extend表示在list末尾添加多个值
                     

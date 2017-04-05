@@ -25,7 +25,7 @@ l.debug("subscring to redis channel %s" % channel)
 l.debug("new inputs will be placed into %s" % queue_dir)
 
 try:
-    os.makedirs(queue_dir)  # mkdir in the /home/xiaosatianyu/workspace/git/driller-yyy/driller/bin/driller
+    os.makedirs(queue_dir)  
 except OSError:
     l.warning("could not create output directory '%s'" % queue_dir)
 
