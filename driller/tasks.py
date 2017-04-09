@@ -75,8 +75,6 @@ def request_drilling(fzr):
     '''
 
     d_jobs = [ ] #利用一个测试用例发现新路径的数量
-
-
     bitmap_f = os.path.join(fzr.out_dir, "fuzzer-master", "fuzz_bitmap") 
     
     ##add by yyy---------------------------------------------------
@@ -94,14 +92,12 @@ def request_drilling(fzr):
     redis_inst = redis.Redis(connection_pool=redis_pool) #一个链接实例
     redis_inst.hset(fzr.binary_id + '-bitmaps', bitmap_hash, bitmap_data) #发送bitmap, hset function 一个name对应一个dic来存储 , 发布到池子里
 
-    
     in_dir = os.path.join(fzr.out_dir, "fuzzer-master", "queue") #AFL生成测试用例的目录
     
     # ignore hidden files
     inputs = filter(lambda d: not d.startswith('.'), os.listdir(in_dir))  #queue下的测试用例
 
     # filter inputs which have already been sent to driller
-    
     inputs = input_filter(os.path.join(fzr.out_dir, "fuzzer-master"), inputs) #过滤已经传递给drill的测试用例 在输出目录下traced文件记录已经传递给driller的测试用例
 
     # submit a driller job for each item in the queue  对每个测试用例符号执行跑
@@ -209,15 +205,10 @@ def fuzz(binary): #这里的参数只有程序名称,所以主函数的目标程
         #while not fzr.found_crash() and not fzr.timed_out():  # 此时afl不会暂停, 继续跑
         while not fzr.timed_out():  # 此时afl不会暂停, 继续跑; 可以自定义退出条件
             # check to see if driller should be invoked
-            
             if 'fuzzer-master' in fzr.stats and 'pending_favs' in fzr.stats['fuzzer-master']:  
-
                 if not int(fzr.stats['fuzzer-master']['pending_favs']) > 510000:
                     l.info("[%s] driller being requested!", binary) 
                     driller_jobs.extend(request_drilling(fzr))  #调用符号执行, extend表示在list末尾添加多个值
-                    
-                    
-                    
             time.sleep(config.CRASH_CHECK_INTERVAL) #间隔时间
 
         # make sure to kill the fuzzers when we're done

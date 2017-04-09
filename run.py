@@ -76,7 +76,6 @@ def start():
 
     redis_inst = redis.Redis(host=config.REDIS_HOST, port=config.REDIS_PORT, db=config.REDIS_DB)
     p = redis_inst.pubsub() #这是一个订阅发布器
-
     p.subscribe("crashes") #订阅 crashed 频道, 在fuzz函数中发射的
 
     cnt = 1

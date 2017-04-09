@@ -130,11 +130,8 @@ class Driller(object):
         '''
         l.info("start _drill_input fucntion")
         # initialize the tracer
-        
         t = tracer.Tracer(self.binary, self.input, hooks=self._hooks) #利用qemu模拟,得到一条路径trace,由一系列的地址构成
-        
         #这个trace是利用qemu跑一遍获得基本块链表,还没有符号执行
-        
         
         self._set_concretizations(t) #具体化? 得到一些测试用例? 这个还不是很清楚,和unicorn有关
         self._set_simproc_limits(t) #设置了一些libc库的上限
