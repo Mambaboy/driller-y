@@ -37,9 +37,10 @@ def get_fuzzer_id(input_data_path): #get testcase-id in the queue catalog 删减
 @app.task
 def drill(binary, input_data, bitmap_hash, tag):
     redis_inst = redis.Redis(connection_pool=redis_pool) #连接redis数据库
-    #fuzz_bitmap = redis_inst.hget(binary + '-bitmaps', bitmap_hash) #get the bitmap  在request_drilling是上传的,也算是即时从文件中读取的
-    fuzz_bitmap="\xff" * 65535
+    fuzz_bitmap = redis_inst.hget(binary + '-bitmaps', bitmap_hash)  #get the bitmap  在request_drilling是上传的,也算是即时从文件中读取的
+    #fuzz_bitmap="\xff" * 65535
     binary_path = os.path.join(config.BINARY_DIR, binary) #目标程序路径
+   
     #配置driller信息
     driller = Driller(binary_path, input_data, fuzz_bitmap, tag, redis=redis_inst) #tag是 类如 fuzzer-master,src:000108
     try:
@@ -82,7 +83,6 @@ def request_drilling(fzr):
     l.info("waiting for fuzz_bitmap")
     while not os.path.exists(bitmap_f):
         pass
-          
     ##end--------------------------------------------------------
     l.info("fuzz_bitmap is generated, go on")
     
@@ -190,7 +190,7 @@ def fuzz(binary): #这里的参数只有程序名称,所以主函数的目标程
     
     early_crash = False
     try:
-        fzr.start() #启动afl
+        fzr.start() #启动afl fzr维护了对所有afl引擎的接口
 
         # start a listening for inputs produced by driller 启动监听对象,将新的测试用例保存到driller目录中
         start_listener(fzr)
@@ -202,11 +202,11 @@ def fuzz(binary): #这里的参数只有程序名称,所以主函数的目标程
         driller_jobs = [ ] #记录每次调用driller后的结果
 
         # start the fuzzer and poll for a crash, timeout, or driller assistance  
-        #while not fzr.found_crash() and not fzr.timed_out():  # 此时afl不会暂停, 继续跑
-        while not fzr.timed_out():  # 此时afl不会暂停, 继续跑; 可以自定义退出条件
-            # check to see if driller should be invoked
+        #while not fzr.found_crash() and not fzr.timed_out():  # 此时afl不会暂停, 继续跑  
+        while not fzr.timed_out():  # 此时afl不会暂停, 继续跑; 可以自定义退出条件  
+            # check to see if driller should be invoked   这里只对fuzzer-master引擎处理
             if 'fuzzer-master' in fzr.stats and 'pending_favs' in fzr.stats['fuzzer-master']:  
-                if not int(fzr.stats['fuzzer-master']['pending_favs']) > 510000:
+                if not int(fzr.stats['fuzzer-master']['pending_favs']) > 510000: #即afl中没有大量优质种子测试用例的时候,启动符号执行来辅助
                     l.info("[%s] driller being requested!", binary) 
                     driller_jobs.extend(request_drilling(fzr))  #调用符号执行, extend表示在list末尾添加多个值
             time.sleep(config.CRASH_CHECK_INTERVAL) #间隔时间

@@ -155,15 +155,15 @@ class Driller(object):
         #开始寻找下一个新的测试用例了
         # used for finding the right index in the fuzz_bitmap
         prev_loc = 0
-        
-        branches = t.next_branch() # tracer.Tracer 下的函数, branches是 PathGroup类  get some missed state
+        #这里 t.path_group.active尽量始终保持一个活的state
+        branches = t.next_branch() # tracer.Tracer 下的函数, branches是 PathGroup类  get some missed state; 在这里 沿着原本的路径有一个active,沿着另一个有一个missed;即上一个地址处有一个分叉
         while len(branches.active) > 0 and t.bb_cnt < len(t.trace): #初始测试用例不好,不一定能发现新的路径
             #t.bb_cnt 有时候会一直没有增加,可能是因为系统调用
             # check here to see if a crash has been found
             if self.redis and self.redis.sismember(self.identifier + "-finished", True):  #这里的crash由谁保存的?和AFL的crash冲突吗
                 return  #表示当前路径是crash,不用继续了
             #missed中保存了错过的路径
-            # mimic AFL's indexing scheme  模仿AFL中的插桩记录手法, 即将发现的新的branch,生成一个新的基本块跳转
+            #mimic AFL's indexing scheme  模仿AFL中的插桩记录手法, 即将发现的新的branch,生成一个新的基本块跳转
             if len(branches.missed) > 0:  
                 prev_addr = branches.missed[0].addr_trace[-1] # a bit ugly #上一个基本块的地址, 这个是history记录的
                 prev_loc = prev_addr
@@ -181,10 +181,11 @@ class Driller(object):
 
                     l.debug("found %x -> %x transition", transition[0], transition[1])
 
-                    if not hit and not self._has_encountered(transition) and not self._has_false(path):
+                    #if not hit and not self._has_encountered(transition) and not self._has_false(path):
+                    if not hit and not self._has_encountered(transition):
                         t.remove_preconstraints(path)  #这里代表发现新的路径了
 
-                        if path.state.satisfiable():
+                        if path.state.satisfiable(): #这个是什么原理? 很多就直接是不满足的,求解不出来还是咋地
                             # a completely new state transitions, let's try to accelerate AFL
                             # by finding  a number of deeper inputs
                             l.info("found a completely new transition, exploring to some extent")#再前进一定的步数
@@ -192,8 +193,8 @@ class Driller(object):
                             w = self._writeout(prev_addr, path) #输出新测试用例到redis数据库,w是一个tuple,一个是信息,第二个是生成的内容
                             if w is not None:
                                 yield w  # 生成器, 返回的是一个tuple, 有关于新的测试用例
-                            for i in self._symbolic_explorer_stub(path): #找到一条新的路径之后,继续符号执行一定的步数至再产生累计1024个state
-                                yield i # 生成器
+#                             for i in self._symbolic_explorer_stub(path): #找到一条新的路径之后,继续符号执行一定的步数至再产生累计1024个state
+#                                 yield i # 生成器
                         else:
                             l.debug("path to %#x was not satisfiable", transition[1])
 
@@ -202,9 +203,13 @@ class Driller(object):
 
             try:
                 branches = t.next_branch()  # go on find the next branch
+                if len(branches.missed) > 0: 
+                    amissed=self._has_false(branches.missed[0])
+                    aactive=self._has_false(branches.active[0])
+                    pass
             except IndexError:
                 branches.active = [ ]
-
+                
 ### EXPLORER
     def _symbolic_explorer_stub(self, path):
         # create a new path group and step it forward up to 1024 accumulated active paths or steps
@@ -264,16 +269,16 @@ class Driller(object):
         return transition in self._encounters
 
     @staticmethod
-    def _has_false(path): #这里需要判定路径是否满足要求? 去掉预约束后,路径是否可行
+    def _has_false(path): #这里判断当前的跳转条件是否满足   guard是否为常量false  约束是否为常量false
         # check if the path is unsat even if we remove preconstraints
-        claripy_false = path.state.se.false
-        if path.state.scratch.guard.cache_key == claripy_false.cache_key:
-            return True
-
-        for c in path.state.se.constraints:
-            if c.cache_key == claripy_false.cache_key:
+        claripy_false = path.state.se.false #这个只是 Bool 类型,是一个false常量   #cache_key是claripy的base模块下的函数
+        if path.state.scratch.guard.cache_key == claripy_false.cache_key: #这个是什么意思? 在这里有问题 ASTCacheKey 类  这里实际上是 BV 类的比较
+            return True      #表示当前路径的条件不满足                        #关键点在于研究 path.state.scratch.guard 是什么意思   
+        # path.state.scratch.guard 也有可能是一个条件约束 比如 Bool: <Bool file_/dev/stdin_30_3_4105_8 .. file_/dev/stdin_30_2_4104_8 .. file_/dev/stdin_30_1_4103_8 .. file_/dev/stdin_30_0_4102_8 > 0x13>
+        for c in path.state.se.constraints:  # path.state.se.constraints 这个应该是分离的约束  哪里来的  SimSolver
+            if c.cache_key == claripy_false.cache_key:  #判断是否所有约束可满足
                 return True
-        return False
+        return False  #false 表示当前路径的条件满足
 
     def _in_catalogue(self, length, prev_addr, next_addr):
         '''

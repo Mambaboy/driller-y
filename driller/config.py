@@ -38,7 +38,7 @@ FUZZ_TIMEOUT=60  #这个好像没有用到
 DICTIONARY_TIMEOUT=None
 
 # how many fuzzers should be spun up when a fuzzing job is received
-FUZZER_INSTANCES=6
+FUZZER_INSTANCES=2
 
 # where the fuzzer should place it's results on the filesystem
 FUZZER_WORK_DIR="/tmp/driller"
