@@ -25,6 +25,7 @@ def start():
     binary_dir=config.BINARY_DIR #yyy
     jobs = [ ]
     binaries = os.listdir(binary_dir)
+    binaries=['claw32'] # by yyy
     for binary in binaries: #遍历多个目标程序, 这里是程序名称
         if binary.startswith("."):
             continue 

@@ -185,7 +185,7 @@ def fuzz(binary): #这里的参数只有程序名称,所以主函数的目标程
     
     ##add by yyy---------------------------------------------
     #这里暂时不用字典生成,这个字典生成是利用控制流图方面的
-    fzr = fuzzer.Fuzzer(binary_path, config.FUZZER_WORK_DIR, config.FUZZER_INSTANCES, seeds=seeds, create_dictionary=False)
+    fzr = fuzzer.Fuzzer(binary_path, config.FUZZER_WORK_DIR, config.FUZZER_INSTANCES, seeds=seeds, create_dictionary=False,fast_mode=True)
     ##end ----------------------------
     
     early_crash = False
