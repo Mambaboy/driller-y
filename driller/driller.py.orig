@@ -1,21 +1,24 @@
 #coding=utf-8
+import angr
+from itertools import islice, izip
 import logging
-
-l = logging.getLogger("driller.Driller")
-
+import os
+import signal
+import time
 import tracer
 
-import angr
+import config  # pylint:disable=relative-import  导入import模块
 
-import os
-import time
-import signal
-import resource
 import cPickle as pickle
+<<<<<<< HEAD
+import resource
+=======
 from itertools import islice, izip
 import hashlib
+>>>>>>> 64831669065a7959f8c6a51ece952df217ce176e
 
-import config #pylint:disable=relative-import
+l = logging.getLogger("driller.Driller")
+l.setLevel(logging.DEBUG)
 
 class DrillerEnvironmentError(Exception):
     pass
@@ -33,7 +36,7 @@ class Driller(object):
         :param binary: the binary to be traced
         :param input: input string to feed to the binary
         :param fuzz_bitmap: AFL's bitmap of state transitions (defaults to empty)
-        :param redis: redis.Redis instance for coordinating multiple Driller instances
+        :param redis: redis.Redis instance for coordinating multiple Driller instances  
         :param hooks: dictionary of addresses to simprocedures
         :param argv: Optionally specify argv params (i,e,: ['./calc', 'parm1'])
             defaults to binary name with no params.
@@ -43,10 +46,16 @@ class Driller(object):
         # redis channel identifier
         self.identifier  = os.path.basename(binary) #去除路径信息,得到程序名称
         self.input       = input
+<<<<<<< HEAD
         self.fuzz_bitmap = fuzz_bitmap   #AFL bitmap 默认全时\xff
         self.tag         = tag  # fuzzer-master,src:000108 这样的
         self.redis       = redis  #一个redis连接实例
+=======
+        self.fuzz_bitmap = fuzz_bitmap
+        self.tag         = tag
+        self.redis       = redis
         self.argv = argv or [binary]
+>>>>>>> 64831669065a7959f8c6a51ece952df217ce176e
 
         self.base = os.path.join(os.path.dirname(__file__), "..") #本模块所在目录的上一级, 即driller部分内
 
@@ -141,12 +150,20 @@ class Driller(object):
         '''
         l.info("start _drill_input fucntion")
         # initialize the tracer
-        t = tracer.Tracer(self.binary, self.input, hooks=self._hooks, argv=self.argv)
+<<<<<<< HEAD
+        t = tracer.Tracer(self.binary, self.input, hooks=self._hooks) #利用qemu模拟,得到一条路径trace,由一系列的地址构成
         #这个trace是利用qemu跑一遍获得基本块链表,还没有符号执行
         
         self._set_concretizations(t) #具体化? 得到一些测试用例? 这个还不是很清楚,和unicorn有关
         self._set_simproc_limits(t) #设置了一些libc库的上限
         
+=======
+        t = tracer.Tracer(self.binary, self.input, hooks=self._hooks, argv=self.argv)
+
+        self._set_concretizations(t)
+        self._set_simproc_limits(t)
+
+>>>>>>> 64831669065a7959f8c6a51ece952df217ce176e
         # update encounters with known state transitions
         # t.trace是基本块的一个有序列表
         # islice(iterable, start, stop[, step])  islice(t.trace, 1, None)对一个list进行筛选, 去掉第一个基本块, stop是不达到的
