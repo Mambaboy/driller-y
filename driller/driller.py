@@ -151,7 +151,7 @@ class Driller(object):
         l.debug("drilling into %r", self.input)
         l.debug("input is %r", self.input)
         l.info("drilling into %r",self.tag)
-
+        
         #开始寻找下一个新的测试用例了
         # used for finding the right index in the fuzz_bitmap
         prev_loc = 0
