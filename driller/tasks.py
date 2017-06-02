@@ -12,6 +12,7 @@ import redis
 
 from driller import Driller
 import pcap
+from sys import argv
 
 l = logging.getLogger("driller.tasks")
 #l.setLevel(logging.DEBUG)
@@ -35,14 +36,16 @@ def get_fuzzer_id(input_data_path): #get testcase-id in the queue catalog 删减
     return fuzzer_name + ",src:" + input_id
 
 @app.task
-def drill(binary, input_data, bitmap_hash, tag):
+def drill(binary, input_data, bitmap_hash, tag, input_path):
     redis_inst = redis.Redis(connection_pool=redis_pool) #连接redis数据库
     fuzz_bitmap = redis_inst.hget(binary + '-bitmaps', bitmap_hash)  #get the bitmap  在request_drilling是上传的,也算是即时从文件中读取的
     #fuzz_bitmap="\xff" * 65535
     binary_path = os.path.join(config.BINARY_DIR, binary) #目标程序路径
    
-    #配置driller信息
-    driller = Driller(binary_path, input_data, fuzz_bitmap, tag, redis=redis_inst) #tag是 类如 fuzzer-master,src:000108
+    #配置driller信息  here should set a proper parameter for the target binary
+    #driller = Driller(binary_path, input_data, fuzz_bitmap, tag, redis=redis_inst) #tag是 类如 fuzzer-master,src:000108
+    driller = Driller(binary_path, input_data, fuzz_bitmap, tag, redis=redis_inst,argv=[binary_path,input_path]) #tag是 类如 fuzzer-master,src:000108
+    
     try:
         return driller.drill() #得到的路径保存在 driller._generated集合中
     except Exception as e:
@@ -105,8 +108,9 @@ def request_drilling(fzr):
         input_data_path = os.path.join(in_dir, input_file) 
         input_data = open(input_data_path, "rb").read() #读取测试用例内容
         #d_jobs.append(drill.delay(fzr.binary_id, input_data, bitmap_hash, get_fuzzer_id(input_data_path)))
-        d_jobs.append(drill(fzr.binary_id, input_data, bitmap_hash, get_fuzzer_id(input_data_path))) #这里只传bitmap_hash, 具体内容通过redis传
+        d_jobs.append(drill(fzr.binary_id, input_data, bitmap_hash, get_fuzzer_id(input_data_path),input_path=input_data_path)) #这里只传bitmap_hash, 具体内容通过redis传
         #这里应该可以通过某一种机制,将结果告诉afl, 然后afl就可以用了
+        #这里的启动参数要用对应的目标测试用例
     return d_jobs
 
 def start_listener(fzr):
@@ -184,7 +188,7 @@ def fuzz(binary): #这里的参数只有程序名称,所以主函数的目标程
     ##end-----------------------
     
     ##add by yyy---------------------------------------------
-    #这里暂时不用字典生成,这个字典生成是利用控制流图方面的
+    #这里暂时不用字典生成,这个字典生成是利用控制流图方面的 这里的启动参数用@@
     fzr = fuzzer.Fuzzer(binary_path, config.FUZZER_WORK_DIR, config.FUZZER_INSTANCES, seeds=seeds, create_dictionary=False,fast_mode=True)
     ##end ----------------------------
     

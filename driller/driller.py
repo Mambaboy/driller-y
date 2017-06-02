@@ -4,9 +4,7 @@ import logging
 l = logging.getLogger("driller.Driller")
 
 import tracer
-
 import angr
-
 import os
 import time
 import signal
@@ -46,7 +44,7 @@ class Driller(object):
         self.fuzz_bitmap = fuzz_bitmap   #AFL bitmap 默认全时\xff
         self.tag         = tag  # fuzzer-master,src:000108 这样的
         self.redis       = redis  #一个redis连接实例
-        self.argv = argv or [binary]
+        self.argv = argv or [binary] #带程序和参数的,或者直接不填;默认有程序
 
         self.base = os.path.join(os.path.dirname(__file__), "..") #本模块所在目录的上一级, 即driller部分内
 
@@ -141,7 +139,7 @@ class Driller(object):
         '''
         l.info("start _drill_input fucntion")
         # initialize the tracer
-        t = tracer.Tracer(self.binary, self.input, hooks=self._hooks, argv=self.argv)
+        t = tracer.Tracer(self.binary, self.input, hooks=self._hooks, argv=self.argv) #如果每次的输入都不一样,这里怎么改?
         #这个trace是利用qemu跑一遍获得基本块链表,还没有符号执行
         
         self._set_concretizations(t) #具体化? 得到一些测试用例? 这个还不是很清楚,和unicorn有关
@@ -190,7 +188,7 @@ class Driller(object):
 
                     transition = (prev_addr, path.addr)
 
-                    l.debug("found %x -> %x transition", transition[0], transition[1])
+                    l.info("found %x -> %x transition", transition[0], transition[1])
 
                     #if not hit and not self._has_encountered(transition) and not self._has_false(path):
                     if not hit and not self._has_encountered(transition):
