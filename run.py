@@ -2,6 +2,7 @@
 #coding=utf-8
 
 import logging
+from dpkt.tftp import ENOSPACE
 
 # silence these loggers
 logging.getLogger().setLevel("CRITICAL")
@@ -21,11 +22,15 @@ Large scale test script. Should just require pointing it at a directory full of 
 '''
 
 #def start(binary_dir):
-def start():
+def start(binary,fast_mode):
     binary_dir=config.BINARY_DIR #yyy
     jobs = [ ]
     binaries = os.listdir(binary_dir)
-    binaries=['claw32'] # by yyy
+    if binary is not None: #这里配置单目标
+        binaries=[binary] # handle
+    input_from="file" # the parameter to indicate the where does the input come from, stdin or file
+    afl_input_para=["@@"] # #such as ["@@", "/tmp/shelfish"]
+    
     for binary in binaries: #遍历多个目标程序, 这里是程序名称
         if binary.startswith("."):
             continue 
@@ -44,10 +49,8 @@ def start():
 #             jobs.append(binary) #添加没有'_02'后缀的程序
         ##end  ----------------------------------
         
-        ##add by yyy -----------------------------
         identifier = binary  
-        jobs.append(binary) 
-        ##end--------------------------------------
+        jobs.append(pathed_binary)  #添加的是路径
         
     l.info("%d binaries found", len(jobs))
     l.debug("binaries: %r", jobs)
@@ -69,9 +72,9 @@ def start():
 
     l.info("going to work on %d", len(jobs))
 
-    for binary in jobs:     #这里是clery下 task模块中的delay函数
+    for binary_path in jobs:     #这里是clery下 task模块中的delay函数
         #driller.tasks.fuzz.delay(binary) #这里的delay是对fuzz这个函数用的 是celery的函数
-        driller.tasks.fuzz(binary) #这里的delay是对fuzz这个函数用的 是celery的函数
+        driller.tasks.fuzz(binary_path,input_from,afl_input_para,fast_mode) #这里的delay是对fuzz这个函数用的 是celery的函数
 
     l.info("listening for crashes..")
 
@@ -94,11 +97,16 @@ def main(argv):
 #     binary_dir = sys.argv[1] #这里的参数和config中的参数有什么区别?
 
 #     start(binary_dir)
-    ##end------------------------------
     
-    ## add by yyy -----------
-          
-    start()
+    binary=argv[1]
+    fast_mode=argv[2] 
+    
+    if fast_mode=='0':
+        fast_mode=False
+    else:
+        fast_mode=True    
+            
+    start(binary,fast_mode)
     ## end ---------------------
     
     

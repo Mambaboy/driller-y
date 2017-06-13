@@ -1,5 +1,7 @@
 #coding=utf-8
 import logging
+from _ast import If
+from audioop import add
 
 l = logging.getLogger("driller.Driller")
 
@@ -26,26 +28,30 @@ class Driller(object):
     Driller object, symbolically follows an input looking for new state transitions
     '''
 
-    def __init__(self, binary, input, fuzz_bitmap = "\xff" * 65535, tag=None, redis=None, hooks=None, argv=None): #pylint:disable=redefined-builtin
+    def __init__(self, binary, input,input_data_path, fuzz_bitmap = "\xff" * 65535, tag=None, redis=None, hooks=None, argv=None,add_fs=None,add_env=None): #pylint:disable=redefined-builtin
         '''
         :param binary: the binary to be traced
         :param input: input string to feed to the binary
         :param fuzz_bitmap: AFL's bitmap of state transitions (defaults to empty)
         :param redis: redis.Redis instance for coordinating multiple Driller instances
         :param hooks: dictionary of addresses to simprocedures
-        :param argv: Optionally specify argv params (i,e,: ['./calc', 'parm1'])
-            defaults to binary name with no params.
+        :param argv: Optionally specify argv params (i,e,: ['./calc', 'parm1']) defaults to binary name with no params.
+        :param fs: the Simfile to use
+        :param add_env: the environment variable 
         '''
 
         self.binary      = binary
         # redis channel identifier
         self.identifier  = os.path.basename(binary) #去除路径信息,得到程序名称
         self.input       = input
+        self.input_data_path=input_data_path 
         self.fuzz_bitmap = fuzz_bitmap   #AFL bitmap 默认全时\xff
         self.tag         = tag  # fuzzer-master,src:000108 这样的
         self.redis       = redis  #一个redis连接实例
         self.argv = argv or [binary] #带程序和参数的,或者直接不填;默认有程序
-
+        self.add_fs=add_fs
+        self.add_env=add_env
+        
         self.base = os.path.join(os.path.dirname(__file__), "..") #本模块所在目录的上一级, 即driller部分内
 
         # the simprocedures
@@ -111,7 +117,7 @@ class Driller(object):
         if self.redis:
             #sadd函数, 给第一个参数制定的集合添加元素, 后面的参数全是元素, 提交当前测试用例,用来标记已经符号执行过了
             self.redis.sadd(self.identifier + '-traced', self.input) #在redis中维护了一个数据结构,程序名称加'-traced'用来表示key
-        
+            
         #接下来生成新的测试用例, 此时的bitmap是固定的,这里没有返回值,但是应该也可以利用这些返回值的
         list(self._drill_input()) #  yield, 在原来的路径基础上,又多走了几步.
         #结果保存在 self._generated
@@ -139,7 +145,7 @@ class Driller(object):
         '''
         l.info("start _drill_input fucntion")
         # initialize the tracer
-        t = tracer.Tracer(self.binary, self.input, hooks=self._hooks, argv=self.argv) #如果每次的输入都不一样,这里怎么改?
+        t = tracer.Tracer(self.binary, self.input, hooks=self._hooks, argv=self.argv, add_fs=self.add_fs, add_env=self.add_env) #
         #这个trace是利用qemu跑一遍获得基本块链表,还没有符号执行
         
         self._set_concretizations(t) #具体化? 得到一些测试用例? 这个还不是很清楚,和unicorn有关
@@ -164,14 +170,11 @@ class Driller(object):
         #开始寻找下一个新的测试用例了
         # used for finding the right index in the fuzz_bitmap
         prev_loc = 0
-        #这里 t.path_group.active尽量始终保持一个活的state
         branches = t.next_branch() # tracer.Tracer 下的函数, branches是 PathGroup类  get some missed state; 在这里 沿着原本的路径有一个active,沿着另一个有一个missed;即上一个地址处有一个分叉
-        while len(branches.active) > 0 and t.bb_cnt < len(t.trace): #初始测试用例不好,不一定能发现新的路径
-            #t.bb_cnt 有时候会一直没有增加,可能是因为系统调用
+        while len(branches.active) > 0 and t.bb_cnt < len(t.trace):  # Bool
             # check here to see if a crash has been found
             if self.redis and self.redis.sismember(self.identifier + "-finished", True):  #这里的crash由谁保存的?和AFL的crash冲突吗
                 return  #表示当前路径是crash,不用继续了
-            #missed中保存了错过的路径
             #mimic AFL's indexing scheme  模仿AFL中的插桩记录手法, 即将发现的新的branch,生成一个新的基本块跳转
             if len(branches.missed) > 0:  
                 prev_addr = branches.missed[0].addr_trace[-1] # a bit ugly #上一个基本块的地址, 这个是history记录的
@@ -185,25 +188,22 @@ class Driller(object):
                     cur_loc &= self.fuzz_bitmap_size - 1
                     #表示是否击中旧的基本块
                     hit = bool(ord(self.fuzz_bitmap[cur_loc ^ prev_loc]) ^ 0xff)  #ord返回ascii码, 判断对应的基本块是否被afl发现了? true表示被发现的
-
                     transition = (prev_addr, path.addr)
-
                     l.info("found %x -> %x transition", transition[0], transition[1])
-
-                    #if not hit and not self._has_encountered(transition) and not self._has_false(path):
-                    if not hit and not self._has_encountered(transition):
-                        t.remove_preconstraints(path)  #这里代表发现新的路径了
-
-                        if path.state.satisfiable(): #这个是什么原理? 很多就直接是不满足的,求解不出来还是咋地
+                    if not hit and not self._has_encountered(transition) and not self._has_false(path):
+                        t.remove_preconstraints(path)  # 这个怎么去除预约束?
+                        if path.state.satisfiable(): #表示约束可以满足吧
                             # a completely new state transitions, let's try to accelerate AFL
                             # by finding  a number of deeper inputs
                             l.info("found a completely new transition, exploring to some extent")#再前进一定的步数
                             #发现的路径信息会不会记录到fuzz_bitmap中区
                             w = self._writeout(prev_addr, path) #输出新测试用例到redis数据库,w是一个tuple,一个是信息,第二个是生成的内容
                             if w is not None:
+                                #pass
                                 yield w  # 生成器, 返回的是一个tuple, 有关于新的测试用例
-#                             for i in self._symbolic_explorer_stub(path): #找到一条新的路径之后,继续符号执行一定的步数至再产生累计1024个state
-#                                 yield i # 生成器
+                            #for i in self._symbolic_explorer_stub(path): #找到一条新的路径之后,继续纯符号执行一定的步数至再产生累计1024个state
+                                #pass
+                                #yield i # 生成器
                         else:
                             l.debug("path to %#x was not satisfiable", transition[1])
 
@@ -211,14 +211,20 @@ class Driller(object):
                         l.debug("%x -> %x has already been encountered", transition[0], transition[1])
 
             try:
-                branches = t.next_branch()  # go on find the next branch
-                if len(branches.missed) > 0: 
-                    amissed=self._has_false(branches.missed[0])
-                    aactive=self._has_false(branches.active[0])
-                    pass
-            except IndexError:
-                branches.active = [ ]
+                branches = t.next_branch()  # go on find the next branch 寻找到下一个分叉的两个选项 ,此时bb_cnt的数值延后
+                #上一句之后,t.bb_cnt指向的是branches.active[0], t.bb_cnt可能是一下子增加很多
+                if len(branches.active) >0:
+                    #以下为调试
+                    if  branches.active[0].state.addr in t.trace:
+                        pass
+                    if len(branches.missed) > 0: 
+                        amissed=self._has_false(branches.missed[0])
+                        aactive=self._has_false(branches.active[0])
                 
+            #except AttributeError: #debug
+            except IndexError: #这个是哪里来的error
+                branches.active = [ ] #清空 表示当前这条真实路径跑不下去了,开始下一个测试用例
+        pass        
 ### EXPLORER
     def _symbolic_explorer_stub(self, path):
         # create a new path group and step it forward up to 1024 accumulated active paths or steps
@@ -226,30 +232,112 @@ class Driller(object):
         steps = 0
         accumulated = 1
 
-        p = angr.Project(self.binary)
-        pg = p.factory.path_group(path, immutable=False, hierarchy=False)
+        p = angr.Project(self.binary) # 为了调用 p.factory 这里缺少了一些东西吧
+        pg = p.factory.path_group(path, immutable=False, hierarchy=False) #这里这些参数的意义
 
         l.info("[%s] started symbolic exploration at %s", self.identifier, time.ctime())
-
-        while len(pg.active) and accumulated < 1024: #这里不断的探索
-            pg.step()
-            steps += 1
-
+        
+#--------只跑一条路径 
+#         while  accumulated < 100000:  #
+#             def some_eq(pg):
+#                 for i in pg.active:
+#                     if i.state.scratch.guard.op=="__eq__" and not i.state.addr in [134514675,134514660,134514690,134514705] or i.state.addr in [134514810]:
+#                         return True
+#             pg.step(until=some_eq)
+#             
+#             
+#             def remove_not_eq(path):
+#                 if path.state.scratch.guard.op != "__eq__":
+#                     return True
+#             for i in pg.active:
+#                 if i.state.scratch.guard.op=="__eq__":
+#                     pg.drop(filter_func=remove_not_eq) #只保留等号约束的路径
+#                     break;
+                
+            #path=successors[-1]
+#             if len(successors) >1:
+#                 pass
+#                 for i in successors:
+#                     pass
+#                     successors[i].state.satisfiable() #这里的路径应该是全部可满足的
+#                     successors[i].state.scratch.guard #比较当前跳转的约束复杂 Bool
+#                 path=successors[0]
+#             steps += 1
             # dump all inputs
-
+            #accumulated = steps * (len(pg.active) + len(pg.deadended)) #这里是一种探索方式的上限
+            #l.info("symbolic exploration %d",accumulated)
+#             if(new_path_num>old_path_num):  #found new path 
+#                 for i in xrange(new_path_num):
+#                     try:
+#                         if pg.active[i].state.satisfiable(): #如果是可满足的
+#                             w = self._writeout(pg.active[i].addr_trace[-1], pg.active[i])  # SimFile
+#                             if w is not None:
+#                                 yield w
+#                                 #pass
+#                     except IndexError: # if the path we're trying to dump wasn't actually satisfiable
+#                         pass
+#         l.info("[%s] symbolic exploration stopped at %s", self.identifier, time.ctime())
+         
+#---------每次发现新的基本块就求解                
+        old_path_num=len(pg.active)
+        new_path_num=len(pg.active)#保证还有存活的路径
+        while new_path_num and accumulated < 2048:  #
+            pg.step() #这个是在线符号执行 运行这一步之后的pg.active也会更新,是每一个基本块都求解,还是只求解一次呢 在这个扩张的过程中会消失
+            for i in pg.active:
+                if i.state.addr==4204598:  #研究一下0x402836
+                    pass
+                    break
+            steps += 1
+            old_path_num=new_path_num
+            new_path_num=len(pg.active)
+            # dump all inputs
             accumulated = steps * (len(pg.active) + len(pg.deadended)) #这里是一种探索方式的上限
-
+            l.info("symbolic exploration %d",accumulated)
+            if(new_path_num>old_path_num):  #found new path 
+                for i in xrange(new_path_num):
+                    try:
+                        if pg.active[i].state.satisfiable(): #如果是可满足的
+                            w = self._writeout(pg.active[i].addr_trace[-1], pg.active[i])  # SimFile
+                            if w is not None:
+                                yield w
+                                #pass
+                    except IndexError: # if the path we're trying to dump wasn't actually satisfiable
+                        pass
         l.info("[%s] symbolic exploration stopped at %s", self.identifier, time.ctime())
+           
+        pg.stash(from_stash='deadended', to_stash='active') #这个步骤的原因? 如果这边有新的,则不对了 修改了stashes
+        if len(pg.active)>new_path_num: 
+            for dumpable in pg.active: #dumpable是 path 类型的
+                try:
+                    if dumpable.state.satisfiable(): #如果是可满足的
+                        w = self._writeout(dumpable.addr_trace[-1], dumpable) 
+                        if w is not None:
+                            #pass
+                            yield w
+                except IndexError: # if the path we're trying to dump wasn't actually satisfiable
+                    pass
 
-        pg.stash(from_stash='deadended', to_stash='active') #为什么这么移动? deadended是行不通的路
-        for dumpable in pg.active: #dumpable是 path 类型的
-            try:
-                if dumpable.state.satisfiable(): #如果是可满足的
-                    w = self._writeout(dumpable.addr_trace[-1], dumpable) 
-                    if w is not None:
-                        yield w
-            except IndexError: # if the path we're trying to dump wasn't actually satisfiable
-                pass
+
+
+#-----------原始的                
+#         while len(pg.active) and accumulated < 50: #修改这里的逻辑,每次新发现一个state,就生成
+#             pg.step() #这个是在线符号执行
+#             steps += 1
+#             # dump all inputs
+#             accumulated = steps * (len(pg.active) + len(pg.deadended)) #这里是一种探索方式的上限
+#             l.info("symbolic exploration %d",accumulated)
+#         l.info("[%s] symbolic exploration stopped at %s", self.identifier, time.ctime())
+#  
+#         pg.stash(from_stash='deadended', to_stash='active') #为什么这么移动? deadended是结束路, 是因为预约束吗
+#         for dumpable in pg.active: #dumpable是 path 类型的
+#             try:
+#                 if dumpable.state.satisfiable(): #如果是可满足的
+#                     w = self._writeout(dumpable.addr_trace[-1], dumpable) 
+#                     if w is not None:
+#                         pass
+#                         #yield w
+#             except IndexError: # if the path we're trying to dump wasn't actually satisfiable
+#                 pass
 
 
 ### UTILS
@@ -278,7 +366,7 @@ class Driller(object):
         return transition in self._encounters
 
     @staticmethod
-    def _has_false(path): #这里判断当前的跳转条件是否满足   guard是否为常量false  约束是否为常量false
+    def _has_false(path): #这里判断当前的跳转条件是否 为常量false 或者true  
         # check if the path is unsat even if we remove preconstraints
         claripy_false = path.state.se.false #这个只是 Bool 类型,是一个false常量   #cache_key是claripy的base模块下的函数
         if path.state.scratch.guard.cache_key == claripy_false.cache_key: #这个是什么意思? 在这里有问题 ASTCacheKey 类  这里实际上是 BV 类的比较
@@ -289,7 +377,7 @@ class Driller(object):
                 return True
         return False  #false 表示当前路径的条件满足
 
-    def _in_catalogue(self, length, prev_addr, next_addr):
+    def _in_catalogue(self, length, prev_addr, next_addr): #这里判断方法不对,有可能是两个 afl只记录了两个基本块的跳跃关系,这里模仿了afl的记录方法,只记录的跳跃关系;  我觉得这里得多记录一些
         '''
         check if a generated input has already been generated earlier during the run or by another
         thread.
@@ -299,10 +387,10 @@ class Driller(object):
         :param next_addr: the destination address in the state transition
         :return: boolean describing whether or not the input generated is redundant
         '''
-        key = '%x,%x,%x\n' % (length, prev_addr, next_addr)
+        key = '%x,%x,%x\n' % (length, prev_addr, next_addr) #这种key无法代表这一条路径
 
         if self.redis:
-            return self.redis.sismember(self.identifier + '-catalogue', key)
+            return self.redis.sismember(self.identifier + '-catalogue', key) #这个返回值,判断对象是否存在
         else:
             # no redis means no coordination, so no catalogue
             return False
@@ -310,22 +398,33 @@ class Driller(object):
     def _add_to_catalogue(self, length, prev_addr, next_addr):
         if self.redis:
             key = '%x,%x,%x\n' % (length, prev_addr, next_addr)
-            self.redis.sadd(self.identifier + '-catalogue', key)
+            self.redis.sadd(self.identifier + '-catalogue', key) #记录出现过的元组跳跃,还有对应测试用例的长度
         # no redis = no catalogue
 
-    def _writeout(self, prev_addr, path):
-        t_pos = path.state.posix.files[0].pos #妈的, 这个是什么意思呢
-        path.state.posix.files[0].seek(0)
+    def _writeout(self, prev_addr, path):   #怎么求解的?
+#         t_pos = path.state.posix.files[0].pos # 找到文件偏移量 这个怎么是找的stdin输入
+#         path.state.posix.files[0].seek(0) #这个怎么是stdin
+#         # read up to the length
+#         generated = path.state.posix.read_from(0, t_pos)# 将偏移之前的数值求解
+#         generated = path.state.se.any_str(generated)
+#         path.state.posix.files[0].seek(t_pos)
+        if len(path.state.posix.files)<4: #此时已经关闭符号文件了
+            return
+        t_pos = path.state.posix.files[3].pos # 找到文件偏移量 这个怎么是找的stdin输入  #怎么有些时候没有 file[3]呢?
+        path.state.posix.files[3].seek(0) # 找到文件头,修改position
         # read up to the length
-        generated = path.state.posix.read_from(0, t_pos)
-        generated = path.state.se.any_str(generated)
-        path.state.posix.files[0].seek(t_pos)
-
+        generated = path.state.posix.read_from(3, t_pos)# 将偏移之前的数值求解 没有读取所有的字节
+        generated = path.state.se.any_str(generated) # BV 对象怎么保存约束的? 不一定有约束吧
+        path.state.posix.files[3].seek(t_pos) #回到文件偏移量
         key = (len(generated), prev_addr, path.addr)
+        print ( "发现 0X%x -> 0x%x" %( prev_addr, path.addr ))
 
         # checks here to see if the generation is worth writing to disk
         # if we generate too many inputs which are not really different we'll seriously slow down AFL
-        if self._in_catalogue(*key):
+        
+        if self._in_catalogue(*key):  #加 *号表示  这个表示方法不对
+        #if False:  #加 *号表示  这个表示方法不对
+            #pass # 不然会影响后面的测试用例
             return
         else:
             self._encounters.add((prev_addr, path.addr))
@@ -339,7 +438,7 @@ class Driller(object):
             # publish it out in real-time so that inputs get there immediately
             channel = self.identifier + '-generated'
 
-            self.redis.publish(channel, pickle.dumps({'meta': key, 'data': generated, "tag": self.tag})) #将结果发送到服务器
+            self.redis.publish(channel, pickle.dumps({'meta': key, 'data': generated, "tag": self.tag})) #将结果发送到服务器,然后会保存到disk
         else:
             l.info("generated: %s", generated.encode('hex'))
 
