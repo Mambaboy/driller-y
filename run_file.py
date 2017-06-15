@@ -23,7 +23,7 @@ Large scale test script. Should just require pointing it at a directory full of 
 '''
 
 #def start(binary_dir):
-def start(fast_mode):
+def start(afl_engine):
     #配置好了目标程序的目录
     name_path="/home/xiaosatianyu/infomation/git-2/lava_corpus/lava_corpus/LAVA-1/branches.txt"
     f=open(name_path,'r')
@@ -62,7 +62,7 @@ def start(fast_mode):
 
     for binary_path in jobs:     #这里是clery下 task模块中的delay函数
         #driller.tasks.fuzz.delay(binary) #这里的delay是对fuzz这个函数用的 是celery的函数
-        driller.tasks.fuzz(binary_path,input_from,afl_input_para,fast_mode) #这里的delay是对fuzz这个函数用的 是celery的函数
+        driller.tasks.fuzz(binary_path,input_from,afl_input_para,afl_engine) #这里的delay是对fuzz这个函数用的 是celery的函数
 
     l.info("listening for crashes..")
 

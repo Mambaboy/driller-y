@@ -197,13 +197,13 @@ class Driller(object):
                             # by finding  a number of deeper inputs
                             l.info("found a completely new transition, exploring to some extent")#再前进一定的步数
                             #发现的路径信息会不会记录到fuzz_bitmap中区
-                            w = self._writeout(prev_addr, path) #输出新测试用例到redis数据库,w是一个tuple,一个是信息,第二个是生成的内容
+                            w = self._writeout(prev_addr, path,len(t.argv)) #输出新测试用例到redis数据库,w是一个tuple,一个是信息,第二个是生成的内容
                             if w is not None:
                                 #pass
                                 yield w  # 生成器, 返回的是一个tuple, 有关于新的测试用例
-                            #for i in self._symbolic_explorer_stub(path): #找到一条新的路径之后,继续纯符号执行一定的步数至再产生累计1024个state
+                            for i in self._symbolic_explorer_stub(path): #找到一条新的路径之后,继续纯符号执行一定的步数至再产生累计1024个state
                                 #pass
-                                #yield i # 生成器
+                                yield i # 生成器
                         else:
                             l.debug("path to %#x was not satisfiable", transition[1])
 
@@ -281,7 +281,7 @@ class Driller(object):
 #---------每次发现新的基本块就求解                
         old_path_num=len(pg.active)
         new_path_num=len(pg.active)#保证还有存活的路径
-        while new_path_num and accumulated < 2048:  #
+        while new_path_num and accumulated < 10240:  #
             pg.step() #这个是在线符号执行 运行这一步之后的pg.active也会更新,是每一个基本块都求解,还是只求解一次呢 在这个扩张的过程中会消失
             for i in pg.active:
                 if i.state.addr==4204598:  #研究一下0x402836
@@ -292,12 +292,13 @@ class Driller(object):
             new_path_num=len(pg.active)
             # dump all inputs
             accumulated = steps * (len(pg.active) + len(pg.deadended)) #这里是一种探索方式的上限
+            print "symbolic exploration accumulated %d" % accumulated
             l.info("symbolic exploration %d",accumulated)
             if(new_path_num>old_path_num):  #found new path 
                 for i in xrange(new_path_num):
                     try:
                         if pg.active[i].state.satisfiable(): #如果是可满足的
-                            w = self._writeout(pg.active[i].addr_trace[-1], pg.active[i])  # SimFile
+                            w = self._writeout(pg.active[i].addr_trace[-1], pg.active[i],len(self.argv))  # SimFile
                             if w is not None:
                                 yield w
                                 #pass
@@ -401,23 +402,26 @@ class Driller(object):
             self.redis.sadd(self.identifier + '-catalogue', key) #记录出现过的元组跳跃,还有对应测试用例的长度
         # no redis = no catalogue
 
-    def _writeout(self, prev_addr, path):   #怎么求解的?
+    def _writeout(self, prev_addr, path,argv_num):   #怎么求解的?
 #         t_pos = path.state.posix.files[0].pos # 找到文件偏移量 这个怎么是找的stdin输入
 #         path.state.posix.files[0].seek(0) #这个怎么是stdin
 #         # read up to the length
 #         generated = path.state.posix.read_from(0, t_pos)# 将偏移之前的数值求解
 #         generated = path.state.se.any_str(generated)
 #         path.state.posix.files[0].seek(t_pos)
-        if len(path.state.posix.files)<4: #此时已经关闭符号文件了
-            return
-        t_pos = path.state.posix.files[3].pos # 找到文件偏移量 这个怎么是找的stdin输入  #怎么有些时候没有 file[3]呢?
-        path.state.posix.files[3].seek(0) # 找到文件头,修改position
+        if argv_num ==1: #此时已经关闭符号文件了
+            fd=0
+        else:
+            fd=3
+        
+        t_pos = path.state.posix.files[fd].pos # 找到文件偏移量 这个怎么是找的stdin输入  #怎么有些时候没有 file[3]呢?
+        path.state.posix.files[fd].seek(0) # 找到文件头,修改position
         # read up to the length
-        generated = path.state.posix.read_from(3, t_pos)# 将偏移之前的数值求解 没有读取所有的字节
+        generated = path.state.posix.read_from(fd, t_pos)# 将偏移之前的数值求解 没有读取所有的字节
         generated = path.state.se.any_str(generated) # BV 对象怎么保存约束的? 不一定有约束吧
-        path.state.posix.files[3].seek(t_pos) #回到文件偏移量
+        path.state.posix.files[fd].seek(t_pos) #回到文件偏移量
         key = (len(generated), prev_addr, path.addr)
-        print ( "发现 0X%x -> 0x%x" %( prev_addr, path.addr ))
+        print ( "新发现 0X%x -> 0x%x" %( prev_addr, path.addr ))
 
         # checks here to see if the generation is worth writing to disk
         # if we generate too many inputs which are not really different we'll seriously slow down AFL

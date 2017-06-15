@@ -21,15 +21,22 @@ import driller.config as config
 Large scale test script. Should just require pointing it at a directory full of binaries.
 '''
 
+
 #def start(binary_dir):
 def start(binary,afl_engine):
-    binary_dir=config.BINARY_DIR_UNIX #yyy
+    #针对cgc程序
+    binary_dir=config.BINARY_DIR_CGC #yyy
+    
     jobs = [ ]
     binaries = os.listdir(binary_dir)
     if binary is not None: #这里配置单目标
         binaries=[binary] # handle
-    input_from="file" # the parameter to indicate the where does the input come from, stdin or file
-    afl_input_para=["-a","@@"] # #such as ["@@", "/tmp/shelfish"]
+    
+    #input_from="file" # the parameter to indicate the where does the input come from, stdin or file
+    #afl_input_para=["@@"] # #such as ["@@", "/tmp/shelfish"]
+    
+    input_from="stdin" # the parameter to indicate the where does the input come from, stdin or file
+    afl_input_para=[] # #such as ["@@", "/tmp/shelfish"]
     
     for binary in binaries: #遍历多个目标程序, 这里是程序名称
         if binary.startswith("."):
@@ -98,12 +105,13 @@ def main(argv):
 
 #     start(binary_dir)
     
+    #针对cgc程序
     binary=argv[1]
     if len(argv)<3:
         afl_engine="default"  ## fast yyy or default; default is shelfish-afl
     else:    
         afl_engine=argv[2] #"fast" "yyy"
-        
+            
     start(binary,afl_engine)
     ## end ---------------------
     

@@ -22,7 +22,7 @@ l = logging.getLogger("driller.tasks")
 #l.setLevel(logging.DEBUG)
 
 backend_url = "redis://%s:%d" % (config.REDIS_HOST, config.REDIS_PORT) #
-app = Celery('tasks', broker=config.BROKER_URL, backend=backend_url)
+app = Celery('tasks', broker=config.BROKER_URL, backend=backend_url) #broker是消息中间件,backend
 app.conf.CELERY_ROUTES = config.CELERY_ROUTES
 app.conf['CELERY_ACKS_LATE'] = True
 app.conf['CELERYD_PREFETCH_MULTIPLIER'] = 1
@@ -50,7 +50,7 @@ def drill(binary_path, input_data, input_data_path, bitmap_hash, tag, input_from
     #-------------------------配置符号执行时的一些特殊参数-------------------------------------   
     if input_from=="stdin":
         yargv=None
-        fs=None
+        add_fs=None
     elif input_from=="file":
         if  afl_input_para is None:
             l.error("the afl_input_para in driller is error")
@@ -60,12 +60,13 @@ def drill(binary_path, input_data, input_data_path, bitmap_hash, tag, input_from
                 break
         yargv=[binary_path]+afl_input_para
         #添加符号文件
-        input_Simfile = simuvex.SimFile(input_data_path, 'rw', size=500) #创建符号文件, size是字节 yyy符号文件字节数
+        input_Simfile = simuvex.SimFile(input_data_path, 'rw', size=500) #创建符号文件, size是字节 
         add_fs = {
         input_data_path: input_Simfile
         } 
     else:
-        l.error("the argv in driller is error")
+        l.error("the input argv in driller is error")
+        
     add_env={"HOME": os.environ["HOME"]}   
     #-------------------------完成配置符号执行时的一些特殊参数-------------------------------   
     driller = Driller(binary_path, input_data, input_data_path, fuzz_bitmap, tag, redis=redis_inst,argv=yargv,add_fs=add_fs,add_env=add_env) 
@@ -184,8 +185,11 @@ def clean_redis(fzr):
     # delete the fuzz bitmaps
     redis_inst.delete("%s-bitmaps" % fzr.binary_id)
 
-@app.task  #注意这个修饰符号, 表示被包装调用,可以传递参数
-def fuzz(binary_path,input_from,afl_input_para,fast_mode): #这里的参数只有程序名称,所以主函数的目标程序目录和config下的都要配置,且需要一致
+#注意这个修饰符号, 表示被包装调用,可以传递参数
+
+@app.task  
+def fuzz(binary_path,input_from,afl_input_para,afl_engine): #这里的参数只有程序名称,所以主函数的目标程序目录和config下的都要配置,且需要一致
+    
     binary=os.path.basename(binary_path)
     l.info("beginning to fuzz \"%s\"", binary)
     seeds=[]
@@ -216,14 +220,16 @@ def fuzz(binary_path,input_from,afl_input_para,fast_mode): #这里的参数只�
                         config.FUZZER_INSTANCES,
                         seeds=seeds, 
                         create_dictionary=False,
-                        fast_mode=fast_mode,
+                        afl_engine=afl_engine,
                         input_from=input_from,
                         afl_input_para=afl_input_para,
-                        time_limit=10*60*60)
+                        time_limit=4*60*60, #second
+                        comapre_afl=True)
     
     early_crash = False
     try:
-        fzr.start() #启动afl fzr维护了对所有afl引擎的接口
+        fzr.start() #启动afl fzr维护了对所有afl引擎的接口 这个afl是对应与和driller配合的afl
+        
         
         # start a listening for inputs produced by driller 启动监听对象,将新的测试用例保存到driller目录中
         start_listener(fzr)
@@ -236,7 +242,8 @@ def fuzz(binary_path,input_from,afl_input_para,fast_mode): #这里的参数只�
         
         time.sleep(2)#保证AFL的相关配置设置完成
         # start the fuzzer and poll for a crash, timeout, or driller assistance  
-        while not fzr.found_crash() and not fzr.timed_out():  # 此时afl不会暂停, 继续跑  
+        #while not fzr.found_crash() and not fzr.timed_out():  # 此时afl不会暂停, 继续跑  
+        while  not fzr.timed_out():  # 此时afl不会暂停, 继续跑  
             if 'fuzzer-master' in fzr.stats and 'pending_favs' in fzr.stats['fuzzer-master']:  
                 if not int(fzr.stats['fuzzer-master']['pending_favs']) > 510000: #即afl中没有大量优质种子测试用例的时候,启动符号执行来辅助
                     l.info("[%s] driller being requested!", binary) 

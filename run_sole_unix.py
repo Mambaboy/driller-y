@@ -22,15 +22,17 @@ Large scale test script. Should just require pointing it at a directory full of 
 '''
 
 #def start(binary_dir):
-def start(binary,afl_engine):
+def start(binary,fast_mode):
     binary_dir=config.BINARY_DIR_UNIX #yyy
     jobs = [ ]
     binaries = os.listdir(binary_dir)
     if binary is not None: #这里配置单目标
         binaries=[binary] # handle
-    input_from="file" # the parameter to indicate the where does the input come from, stdin or file
-    afl_input_para=["-a","@@"] # #such as ["@@", "/tmp/shelfish"]
-    
+    #input_from="file" # the parameter to indicate the where does the input come from, stdin or file
+    #afl_input_para=["@@"] # #such as ["@@", "/tmp/shelfish"]
+    input_from="stdin"
+    afl_input_para=[]
+        
     for binary in binaries: #遍历多个目标程序, 这里是程序名称
         if binary.startswith("."):
             continue 
@@ -74,7 +76,7 @@ def start(binary,afl_engine):
 
     for binary_path in jobs:     #这里是clery下 task模块中的delay函数
         #driller.tasks.fuzz.delay(binary) #这里的delay是对fuzz这个函数用的 是celery的函数
-        driller.tasks.fuzz(binary_path,input_from,afl_input_para,afl_engine) #这里的delay是对fuzz这个函数用的 是celery的函数
+        driller.tasks.fuzz(binary_path,input_from,afl_input_para,fast_mode) #这里的delay是对fuzz这个函数用的 是celery的函数
 
     l.info("listening for crashes..")
 
@@ -98,12 +100,13 @@ def main(argv):
 
 #     start(binary_dir)
     
+    #针对unix程序
     binary=argv[1]
     if len(argv)<3:
         afl_engine="default"  ## fast yyy or default; default is shelfish-afl
     else:    
         afl_engine=argv[2] #"fast" "yyy"
-        
+            
     start(binary,afl_engine)
     ## end ---------------------
     
