@@ -206,9 +206,9 @@ class Driller(object):
                             if w is not None:
                                 #pass
                                 yield w  # 生成器, 返回的是一个tuple, 有关于新的测试用例
-#                             for i in self._symbolic_explorer_stub(path): #找到一条新的路径之后,继续纯符号执行一定的步数至再产生累计1024个state
-#                                 #pass
-#                                 yield i # 生成器
+                            for i in self._symbolic_explorer_stub(path): #找到一条新的路径之后,继续纯符号执行一定的步数至再产生累计1024个state
+                                #pass
+                                yield i # 生成器
                         else:
                             l.debug("path to %#x was not satisfiable", transition[1])
 
@@ -286,7 +286,7 @@ class Driller(object):
 #---------每次发现新的基本块就求解                
         old_path_num=len(pg.active)
         new_path_num=len(pg.active)#保证还有存活的路径
-        while new_path_num and accumulated < 10240:  #
+        while new_path_num and accumulated < 1024:  #
             pg.step() #这个是在线符号执行 运行这一步之后的pg.active也会更新,是每一个基本块都求解,还是只求解一次呢 在这个扩张的过程中会消失
             for i in pg.active:
                 if i.state.addr==4204598:  #研究一下0x402836
@@ -414,7 +414,7 @@ class Driller(object):
 #         generated = path.state.posix.read_from(0, t_pos)# 将偏移之前的数值求解
 #         generated = path.state.se.any_str(generated)
 #         path.state.posix.files[0].seek(t_pos)
-        if argv_num ==1: #此时已经关闭符号文件了
+        if argv_num ==1: #没有其他符号文件
             fd=0
         else:
             fd=3

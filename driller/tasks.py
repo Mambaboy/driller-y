@@ -170,6 +170,9 @@ def start_listener(fzr):
         raise Exception("could not find driller listener install directory")
 
     args = [os.path.join(base, "bin", "driller", "listen.py"), driller_queue_dir, channel]
+    args[0]="/home/xiaosatianyu/workspace/git/driller-yyy/driller/bin/driller/listen.py"
+    args[1]="/tmp/driller/CROMU_00046/sync/queue"
+    args[2]="CROMU_00046-generated"
     p = subprocess.Popen(args) #启动listen.py  
 
     # add the proc to the fuzzer's list of processes
@@ -234,7 +237,6 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine): #这里的参数只�
     early_crash = False
     try:
         fzr.start() #启动afl fzr维护了对所有afl引擎的接口 这个afl是对应与和driller配合的afl
-        
         
         # start a listening for inputs produced by driller 启动监听对象,将新的测试用例保存到driller目录中
         start_listener(fzr)
