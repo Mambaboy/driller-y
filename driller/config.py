@@ -16,7 +16,7 @@ CELERY_ROUTES = None
 QEMU_DIR=None
 
 # directory containing the binaries, used by the driller node to find binaries
-BINARY_DIR_UNIX='/home/xiaosatianyu/Desktop/driller/binary-unix/unix/stdin'
+BINARY_DIR_UNIX='/home/xiaosatianyu/Desktop/driller/binary-unix'
 BINARY_DIR_CGC='/home/xiaosatianyu/Desktop/driller/binary-cgc'
 # directory containing the pcap corpus
 PCAP_DIR=None  #语料库

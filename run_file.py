@@ -78,12 +78,14 @@ def start(afl_engine):
 
 #挖掘file类型
 def main(argv):
-    fast_mode=argv[1] 
-    if fast_mode=='0':
-        fast_mode=False
-    else:
-        fast_mode=True        
-    start(fast_mode)
+            
+    #针对unix的file程序程序
+    if len(argv)<2:
+        afl_engine="default"  ## fast yyy or default; default is shelfish-afl
+    else:    
+        afl_engine=argv[1] #"fast" "yyy"
+                 
+    start(afl_engine)
     
     
 if __name__ == "__main__":

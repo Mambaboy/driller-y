@@ -28,7 +28,8 @@ class Driller(object):
     Driller object, symbolically follows an input looking for new state transitions
     '''
 
-    def __init__(self, binary, input,input_data_path, fuzz_bitmap = "\xff" * 65535, tag=None, redis=None, hooks=None, argv=None,add_fs=None,add_env=None): #pylint:disable=redefined-builtin
+    def __init__(self, binary, input,input_data_path, fuzz_bitmap = "\xff" * 65535, tag=None, redis=None, hooks=None, argv=None,
+                 add_fs=None,add_env=None,add_exclude_sim_pro={}): #pylint:disable=redefined-builtin
         '''
         :param binary: the binary to be traced
         :param input: input string to feed to the binary
@@ -38,6 +39,7 @@ class Driller(object):
         :param argv: Optionally specify argv params (i,e,: ['./calc', 'parm1']) defaults to binary name with no params.
         :param fs: the Simfile to use
         :param add_env: the environment variable 
+        :param add_exclude_sim_pro: the exclude simprocedure
         '''
 
         self.binary      = binary
@@ -49,8 +51,10 @@ class Driller(object):
         self.tag         = tag  # fuzzer-master,src:000108 这样的
         self.redis       = redis  #一个redis连接实例
         self.argv = argv or [binary] #带程序和参数的,或者直接不填;默认有程序
+        ##yyy add
         self.add_fs=add_fs
         self.add_env=add_env
+        self.add_exclude_sim_pro=add_exclude_sim_pro
         
         self.base = os.path.join(os.path.dirname(__file__), "..") #本模块所在目录的上一级, 即driller部分内
 
@@ -145,7 +149,8 @@ class Driller(object):
         '''
         l.info("start _drill_input fucntion")
         # initialize the tracer
-        t = tracer.Tracer(self.binary, self.input, hooks=self._hooks, argv=self.argv, add_fs=self.add_fs, add_env=self.add_env) #
+        t = tracer.Tracer(self.binary, self.input, hooks=self._hooks, argv=self.argv, 
+                          add_fs=self.add_fs, add_env=self.add_env,add_exclude_sim_pro=self.add_exclude_sim_pro) #
         #这个trace是利用qemu跑一遍获得基本块链表,还没有符号执行
         
         self._set_concretizations(t) #具体化? 得到一些测试用例? 这个还不是很清楚,和unicorn有关
@@ -197,13 +202,13 @@ class Driller(object):
                             # by finding  a number of deeper inputs
                             l.info("found a completely new transition, exploring to some extent")#再前进一定的步数
                             #发现的路径信息会不会记录到fuzz_bitmap中区
-                            w = self._writeout(prev_addr, path,len(t.argv)) #输出新测试用例到redis数据库,w是一个tuple,一个是信息,第二个是生成的内容
+                            w = self._writeout(prev_addr, path, len(t.argv)) #输出新测试用例到redis数据库,w是一个tuple,一个是信息,第二个是生成的内容
                             if w is not None:
                                 #pass
                                 yield w  # 生成器, 返回的是一个tuple, 有关于新的测试用例
-                            for i in self._symbolic_explorer_stub(path): #找到一条新的路径之后,继续纯符号执行一定的步数至再产生累计1024个state
-                                #pass
-                                yield i # 生成器
+#                             for i in self._symbolic_explorer_stub(path): #找到一条新的路径之后,继续纯符号执行一定的步数至再产生累计1024个state
+#                                 #pass
+#                                 yield i # 生成器
                         else:
                             l.debug("path to %#x was not satisfiable", transition[1])
 
@@ -311,7 +316,7 @@ class Driller(object):
             for dumpable in pg.active: #dumpable是 path 类型的
                 try:
                     if dumpable.state.satisfiable(): #如果是可满足的
-                        w = self._writeout(dumpable.addr_trace[-1], dumpable) 
+                        w = self._writeout(dumpable.addr_trace[-1], dumpable, len(self.argv)) 
                         if w is not None:
                             #pass
                             yield w
@@ -402,7 +407,7 @@ class Driller(object):
             self.redis.sadd(self.identifier + '-catalogue', key) #记录出现过的元组跳跃,还有对应测试用例的长度
         # no redis = no catalogue
 
-    def _writeout(self, prev_addr, path,argv_num):   #怎么求解的?
+    def _writeout(self, prev_addr, path, argv_num):   #怎么求解的?
 #         t_pos = path.state.posix.files[0].pos # 找到文件偏移量 这个怎么是找的stdin输入
 #         path.state.posix.files[0].seek(0) #这个怎么是stdin
 #         # read up to the length

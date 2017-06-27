@@ -32,9 +32,6 @@ def start(binary,afl_engine):
     if binary is not None: #这里配置单目标
         binaries=[binary] # handle
     
-    #input_from="file" # the parameter to indicate the where does the input come from, stdin or file
-    #afl_input_para=["@@"] # #such as ["@@", "/tmp/shelfish"]
-    
     input_from="stdin" # the parameter to indicate the where does the input come from, stdin or file
     afl_input_para=[] # #such as ["@@", "/tmp/shelfish"]
     
@@ -96,15 +93,6 @@ def start(binary,afl_engine):
             cnt += 1
 
 def main(argv):
-    ##annotation by yyy------------------------
-#     if len(argv) < 2:
-#         print "usage: %s <binary_dir>" % argv[0]
-#         return 1
-   
-#     binary_dir = sys.argv[1] #这里的参数和config中的参数有什么区别?
-
-#     start(binary_dir)
-    
     #针对cgc程序
     binary=argv[1]
     if len(argv)<3:

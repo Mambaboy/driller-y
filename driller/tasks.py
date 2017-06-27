@@ -51,6 +51,7 @@ def drill(binary_path, input_data, input_data_path, bitmap_hash, tag, input_from
     if input_from=="stdin":
         yargv=None
         add_fs=None
+        add_exclude_sim_pro=[]
     elif input_from=="file":
         if  afl_input_para is None:
             l.error("the afl_input_para in driller is error")
@@ -64,12 +65,16 @@ def drill(binary_path, input_data, input_data_path, bitmap_hash, tag, input_from
         add_fs = {
         input_data_path: input_Simfile
         } 
+        add_exclude_sim_pro=["stat"]
     else:
         l.error("the input argv in driller is error")
         
-    add_env={"HOME": os.environ["HOME"]}   
+    #add_env={"HOME": os.environ["HOME"]}   
+    add_env=None
+    
     #-------------------------完成配置符号执行时的一些特殊参数-------------------------------   
-    driller = Driller(binary_path, input_data, input_data_path, fuzz_bitmap, tag, redis=redis_inst,argv=yargv,add_fs=add_fs,add_env=add_env) 
+    driller = Driller(binary_path, input_data, input_data_path, fuzz_bitmap, tag, redis=redis_inst,argv=yargv,
+                      add_fs=add_fs,add_env=add_env,add_exclude_sim_pro=add_exclude_sim_pro) 
     #tag是 类如 fuzzer-master,src:000108
     
     try:

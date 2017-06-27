@@ -22,16 +22,22 @@ Large scale test script. Should just require pointing it at a directory full of 
 '''
 
 #def start(binary_dir):
-def start(binary,fast_mode):
+def start(binary,afl_engine,input_from,afl_para=None):
     binary_dir=config.BINARY_DIR_UNIX #yyy
     jobs = [ ]
     binaries = os.listdir(binary_dir)
     if binary is not None: #这里配置单目标
         binaries=[binary] # handle
-    #input_from="file" # the parameter to indicate the where does the input come from, stdin or file
-    #afl_input_para=["@@"] # #such as ["@@", "/tmp/shelfish"]
-    input_from="stdin"
-    afl_input_para=[]
+    
+        
+    input_from=input_from
+    if input_from=="file":
+        afl_input_para=["@@"]
+    else:
+        afl_input_para=[]
+        
+    if afl_para is not None:    
+        afl_input_para=afl_para
         
     for binary in binaries: #遍历多个目标程序, 这里是程序名称
         if binary.startswith("."):
@@ -76,7 +82,7 @@ def start(binary,fast_mode):
 
     for binary_path in jobs:     #这里是clery下 task模块中的delay函数
         #driller.tasks.fuzz.delay(binary) #这里的delay是对fuzz这个函数用的 是celery的函数
-        driller.tasks.fuzz(binary_path,input_from,afl_input_para,fast_mode) #这里的delay是对fuzz这个函数用的 是celery的函数
+        driller.tasks.fuzz(binary_path,input_from,afl_input_para,afl_engine) #这里的delay是对fuzz这个函数用的 是celery的函数
 
     l.info("listening for crashes..")
 
@@ -91,23 +97,17 @@ def start(binary,fast_mode):
             cnt += 1
 
 def main(argv):
-    ##annotation by yyy------------------------
-#     if len(argv) < 2:
-#         print "usage: %s <binary_dir>" % argv[0]
-#         return 1
-   
-#     binary_dir = sys.argv[1] #这里的参数和config中的参数有什么区别?
 
-#     start(binary_dir)
-    
     #针对unix程序
     binary=argv[1]
-    if len(argv)<3:
+    if len(argv)<4:
         afl_engine="default"  ## fast yyy or default; default is shelfish-afl
+        input_from="stdin"
     else:    
         afl_engine=argv[2] #"fast" "yyy"
+        input_from=argv[3] # "stdin" "file"
             
-    start(binary,afl_engine)
+    start(binary,afl_engine,input_from)
     ## end ---------------------
     
     
