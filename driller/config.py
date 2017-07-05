@@ -1,12 +1,15 @@
 #coding=utf-8
 ### Redis Options
 import driller
+from celery.backends.base import Backend
 REDIS_HOST='127.0.0.1'
 REDIS_PORT=6379
-REDIS_DB=None  #redis中默认为0
+REDIS_DB='5'  #数据库
+REDIS_BACKEND_DB='6'  #结果数据库
 
 ### Celery Options
-BROKER_URL= 'redis://127.0.0.1:6379'
+BROKER_URL= 'redis://127.0.0.1:6379/'+REDIS_DB
+Backend_URL= 'redis://127.0.0.1:6379/'+REDIS_BACKEND_DB
 
 CELERY_ROUTES = None
 
@@ -16,8 +19,8 @@ CELERY_ROUTES = None
 QEMU_DIR=None
 
 # directory containing the binaries, used by the driller node to find binaries
-BINARY_DIR_UNIX='/home/xiaosatianyu/Desktop/driller/binary-unix'
-BINARY_DIR_CGC='/home/xiaosatianyu/Desktop/driller/binary-cgc'
+BINARY_DIR_UNIX='/home/xiaosatianyu/Desktop/driller-desk/binary-unix'
+BINARY_DIR_CGC='/home/xiaosatianyu/Desktop/driller-desk/binary-cgc'
 # directory containing the pcap corpus
 PCAP_DIR=None  #语料库
 
@@ -52,6 +55,6 @@ FUZZER_WORK_DIR="/tmp/driller"
 
 ##add by yyy----------------------------------
 #the seed directory
-SEED='/home/xiaosatianyu/Desktop/driller/seed'
+SEED='/home/xiaosatianyu/Desktop/driller-desk/seed'
 
 

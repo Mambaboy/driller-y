@@ -29,7 +29,7 @@ class Driller(object):
     '''
 
     def __init__(self, binary, input,input_data_path, fuzz_bitmap = "\xff" * 65535, tag=None, redis=None, hooks=None, argv=None,
-                 add_fs=None,add_env=None,add_exclude_sim_pro={}): #pylint:disable=redefined-builtin
+                 add_fs=None,add_env=None,add_exclude_sim_pro={},time_limit_for_pro=None,sy_ex_time_limit=None): #pylint:disable=redefined-builtin
         '''
         :param binary: the binary to be traced
         :param input: input string to feed to the binary
@@ -40,6 +40,8 @@ class Driller(object):
         :param fs: the Simfile to use
         :param add_env: the environment variable 
         :param add_exclude_sim_pro: the exclude simprocedure
+        :param time_limit_for_pro: time limitation for drilling this binary
+        :param sy_ex_time_limit: time limitation for once symbolic exploration
         '''
 
         self.binary      = binary
@@ -55,6 +57,9 @@ class Driller(object):
         self.add_fs=add_fs
         self.add_env=add_env
         self.add_exclude_sim_pro=add_exclude_sim_pro
+        self.time_limit_for_pro=time_limit_for_pro
+        self.sy_ex_time_limit=sy_ex_time_limit
+        self.start_time=time.time() # the start time of this drilling
         
         self.base = os.path.join(os.path.dirname(__file__), "..") #本模块所在目录的上一级, 即driller部分内
 
@@ -177,6 +182,8 @@ class Driller(object):
         prev_loc = 0
         branches = t.next_branch() # tracer.Tracer 下的函数, branches是 PathGroup类  get some missed state; 在这里 沿着原本的路径有一个active,沿着另一个有一个missed;即上一个地址处有一个分叉
         while len(branches.active) > 0 and t.bb_cnt < len(t.trace):  # Bool
+            if  self.whole_driller_timed_out(): #the time limitation for this input
+                break
             # check here to see if a crash has been found
             if self.redis and self.redis.sismember(self.identifier + "-finished", True):  #这里的crash由谁保存的?和AFL的crash冲突吗
                 return  #表示当前路径是crash,不用继续了
@@ -233,10 +240,10 @@ class Driller(object):
 ### EXPLORER
     def _symbolic_explorer_stub(self, path):
         # create a new path group and step it forward up to 1024 accumulated active paths or steps
-
+        #这里时间上会越来越慢
         steps = 0
         accumulated = 1
-
+        start_time=time.time()
         p = angr.Project(self.binary) # 为了调用 p.factory 这里缺少了一些东西吧
         pg = p.factory.path_group(path, immutable=False, hierarchy=False) #这里这些参数的意义
 
@@ -284,66 +291,67 @@ class Driller(object):
 #         l.info("[%s] symbolic exploration stopped at %s", self.identifier, time.ctime())
          
 #---------每次发现新的基本块就求解                
-        old_path_num=len(pg.active)
-        new_path_num=len(pg.active)#保证还有存活的路径
-        while new_path_num and accumulated < 1024:  #
-            pg.step() #这个是在线符号执行 运行这一步之后的pg.active也会更新,是每一个基本块都求解,还是只求解一次呢 在这个扩张的过程中会消失
-            for i in pg.active:
-                if i.state.addr==4204598:  #研究一下0x402836
-                    pass
-                    break
-            steps += 1
-            old_path_num=new_path_num
-            new_path_num=len(pg.active)
-            # dump all inputs
-            accumulated = steps * (len(pg.active) + len(pg.deadended)) #这里是一种探索方式的上限
-            print "symbolic exploration accumulated %d" % accumulated
-            l.info("symbolic exploration %d",accumulated)
-            if(new_path_num>old_path_num):  #found new path 
-                for i in xrange(new_path_num):
-                    try:
-                        if pg.active[i].state.satisfiable(): #如果是可满足的
-                            w = self._writeout(pg.active[i].addr_trace[-1], pg.active[i],len(self.argv))  # SimFile
-                            if w is not None:
-                                yield w
-                                #pass
-                    except IndexError: # if the path we're trying to dump wasn't actually satisfiable
-                        pass
-        l.info("[%s] symbolic exploration stopped at %s", self.identifier, time.ctime())
-           
-        pg.stash(from_stash='deadended', to_stash='active') #这个步骤的原因? 如果这边有新的,则不对了 修改了stashes
-        if len(pg.active)>new_path_num: 
-            for dumpable in pg.active: #dumpable是 path 类型的
-                try:
-                    if dumpable.state.satisfiable(): #如果是可满足的
-                        w = self._writeout(dumpable.addr_trace[-1], dumpable, len(self.argv)) 
-                        if w is not None:
-                            #pass
-                            yield w
-                except IndexError: # if the path we're trying to dump wasn't actually satisfiable
-                    pass
-
-
-
-#-----------原始的                
-#         while len(pg.active) and accumulated < 50: #修改这里的逻辑,每次新发现一个state,就生成
-#             pg.step() #这个是在线符号执行
+#         old_path_num=len(pg.active)
+#         new_path_num=len(pg.active)#保证还有存活的路径
+#         while new_path_num and accumulated < 10240:  #
+#             pg.step() #这个是在线符号执行 运行这一步之后的pg.active也会更新,是每一个基本块都求解,还是只求解一次呢 在这个扩张的过程中会消失
 #             steps += 1
+#             old_path_num=new_path_num
+#             new_path_num=len(pg.active)
 #             # dump all inputs
 #             accumulated = steps * (len(pg.active) + len(pg.deadended)) #这里是一种探索方式的上限
+#             print "symbolic exploration accumulated %d" % accumulated
 #             l.info("symbolic exploration %d",accumulated)
-#         l.info("[%s] symbolic exploration stopped at %s", self.identifier, time.ctime())
-#  
-#         pg.stash(from_stash='deadended', to_stash='active') #为什么这么移动? deadended是结束路, 是因为预约束吗
-#         for dumpable in pg.active: #dumpable是 path 类型的
-#             try:
-#                 if dumpable.state.satisfiable(): #如果是可满足的
-#                     w = self._writeout(dumpable.addr_trace[-1], dumpable) 
-#                     if w is not None:
+#             if(new_path_num>old_path_num):  #found new path 
+#                 for i in xrange(new_path_num):
+#                     try:
+#                         if pg.active[i].state.satisfiable(): #如果是可满足的
+#                             w = self._writeout(pg.active[i].addr_trace[-1], pg.active[i],len(self.argv))  # SimFile
+#                             if w is not None:
+#                                 yield w
+#                                 #pass
+#                     except IndexError: # if the path we're trying to dump wasn't actually satisfiable
 #                         pass
-#                         #yield w
-#             except IndexError: # if the path we're trying to dump wasn't actually satisfiable
-#                 pass
+#         l.info("[%s] symbolic exploration stopped at %s", self.identifier, time.ctime())
+#            
+#         pg.stash(from_stash='deadended', to_stash='active') #这个步骤的原因? 如果这边有新的,则不对了 修改了stashes
+#         if len(pg.active)>new_path_num: 
+#             for dumpable in pg.active: #dumpable是 path 类型的
+#                 try:
+#                     if dumpable.state.satisfiable(): #如果是可满足的
+#                         w = self._writeout(dumpable.addr_trace[-1], dumpable, len(self.argv)) 
+#                         if w is not None:
+#                             #pass
+#                             yield w
+#                 except IndexError: # if the path we're trying to dump wasn't actually satisfiable
+#                     pass
+
+
+
+#-----------原始的  , 发现新路径到终点,再生成    
+        #计时
+        while len(pg.active) and accumulated < 5000: #修改这里的逻辑,每次新发现一个state,就生成
+            if  self.single_sy_ex_timed_out(start_time): ##单次的时间上限
+                break
+            pg.step() #这个是在线符号执行
+            steps += 1
+            # dump all inputs
+            accumulated = steps * (len(pg.active) + len(pg.deadended)) #这里是一种探索方式的上限
+            l.info("symbolic exploration %d",accumulated)
+            print "%s symbolic exploration accumulated %d,time is %d" % (os.path.basename(self.binary),accumulated, time.time()- start_time)
+            
+        l.info("[%s] symbolic exploration stopped at %s second", self.identifier, time.ctime())
+  
+        pg.stash(from_stash='deadended', to_stash='active') #为什么这么移动? deadended是结束路, 是因为预约束吗
+        for dumpable in pg.active: #dumpable是 path 类型的
+            try:
+                if dumpable.state.satisfiable(): #如果是可满足的
+                    w = self._writeout(dumpable.addr_trace[-1], dumpable,1) 
+                    if w is not None:
+                        #pass
+                        yield w
+            except IndexError: # if the path we're trying to dump wasn't actually satisfiable
+                pass
 
 
 ### UTILS
@@ -464,3 +472,19 @@ class Driller(object):
                     "started = '%s'\n" % time.ctime(self.start_time) +
                     "input = %r\n" % self.input +
                     "fuzz_bitmap = %r" % self.fuzz_bitmap)
+
+    def whole_driller_timed_out(self): 
+        '''
+        configure to end drilling of this input
+        '''
+        if self.time_limit_for_pro is None:
+            return False  # 默认是false
+        return time.time() - self.start_time > self.time_limit_for_pro
+    
+    def single_sy_ex_timed_out(self,this_start_time): 
+        '''
+        configure to end drilling of this symbolice exploration
+        '''
+        if self.sy_ex_time_limit is None:
+            return False  # 默认是false
+        return time.time() - this_start_time > self.sy_ex_time_limit

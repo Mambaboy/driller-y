@@ -14,13 +14,15 @@ l.setLevel("INFO")
 import os
 import sys
 import redis
-import driller.tasks
-import driller.config as config
-
+import tasks
+import config
+import signal
+import time
 
 '''
 Large scale test script. Should just require pointing it at a directory full of binaries.
 '''
+
 
 
 #def start(binary_dir):
@@ -76,28 +78,36 @@ def start(binary,afl_engine):
 #         pass
     # yyy
     jobs = filter(lambda j: j not in filter_t, jobs) #过滤出没有破解的程序
-
+    jobs.sort()
     l.info("going to work on %d", len(jobs))
 
     for binary_path in jobs:     #这里是clery下 task模块中的delay函数
-        #driller.tasks.fuzz.delay(binary_path,input_from,afl_input_para,afl_engine) #这里的delay是对fuzz这个函数用的 是celery的函数
-        driller.tasks.fuzz(binary_path,input_from,afl_input_para,afl_engine) 
+        tasks.fuzz.delay(binary_path,input_from,afl_input_para,afl_engine) #这里的delay是对fuzz这个函数用的 是celery的函数
+        #tasks.fuzz(binary_path,input_from,afl_input_para,afl_engine) 
 
-    l.info("listening for crashes..")
+    l.info("listening for tasks..")
 
+    ##监听crash
+#     redis_inst = redis.Redis(host=config.REDIS_HOST, port=config.REDIS_PORT, db=config.REDIS_DB)
+#     p = redis_inst.pubsub() #这是一个订阅发布器
+#     p.subscribe("crashes") #订阅 crashed 频道, 在fuzz函数中发射的
+#     cnt = 1
+#     for msg in p.listen():
+#         if msg['type'] == 'message':
+#             l.info("[%03d/%03d] crash found for '%s'", cnt, len(jobs), msg['data'])
+#             cnt += 1
+            
+    ##监听task完成情况
     redis_inst = redis.Redis(host=config.REDIS_HOST, port=config.REDIS_PORT, db=config.REDIS_DB)
     p = redis_inst.pubsub() #这是一个订阅发布器
-    p.subscribe("crashes") #订阅 crashed 频道, 在fuzz函数中发射的
-
-    cnt = 1
+    p.subscribe("tasks") #订阅 crashed 频道, 在fuzz函数中发射的
+    
     for msg in p.listen():
         if msg['type'] == 'message':
-            l.info("[%03d/%03d] crash found for '%s'", cnt, len(jobs), msg['data'])
-            cnt += 1
+            l.info("task: %s",msg['data'])
+            
             
 
-
-  
 def main(argv):
     ##annotation by yyy------------------------
 #     if len(argv) < 2:
@@ -109,7 +119,6 @@ def main(argv):
 #     start(binary_dir)
     
     #针对cgc程序
-    
     binary=None
     if len(argv)<2:
         afl_engine="default"  ## fast yyy or default; default is shelfish-afl
@@ -119,8 +128,10 @@ def main(argv):
     start(binary,afl_engine)
     ## end ---------------------
     
-    
+def handler(signal_num,frame):
+    print "\nYou Pressed Ctrl-C11."
+    sys.exit(signal_num)
+signal.signal(signal.SIGINT, handler)  
     
 if __name__ == "__main__":
-    
     sys.exit(main(sys.argv))

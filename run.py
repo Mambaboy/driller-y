@@ -23,7 +23,7 @@ Large scale test script. Should just require pointing it at a directory full of 
 
 #def start(binary_dir):
 def start(binary,afl_engine):
-    binary_dir=config.BINARY_DIR_UNIX #yyy
+    binary_dir=config.BINARY_DIR_CGC #yyy
     jobs = [ ]
     binaries = os.listdir(binary_dir)
     if binary is not None: #这里配置单目标
@@ -73,8 +73,8 @@ def start(binary,afl_engine):
     l.info("going to work on %d", len(jobs))
 
     for binary_path in jobs:     #这里是clery下 task模块中的delay函数
-        #driller.tasks.fuzz.delay(binary) #这里的delay是对fuzz这个函数用的 是celery的函数
-        driller.tasks.fuzz(binary_path,input_from,afl_input_para,afl_engine) #这里的delay是对fuzz这个函数用的 是celery的函数
+        driller.tasks.fuzz.delay(binary_path,input_from,afl_input_para,afl_engine) #这里的delay是对fuzz这个函数用的 是celery的函数
+        #driller.tasks.fuzz(binary_path,input_from,afl_input_para,afl_engine) #这里的delay是对fuzz这个函数用的 是celery的函数
 
     l.info("listening for crashes..")
 

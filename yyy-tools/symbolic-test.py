@@ -23,7 +23,7 @@ def clean_redis(binary):
     
 def start_listener(workdir):
 
-    driller_queue_dir = os.path.join(workdir, "driller") #用于保存符号执行生成测试用例的目录
+    driller_queue_dir = os.path.join(workdir, "driller", "queue")
     binary_id=os.path.basename(workdir)
     channel = "%s-generated" % binary_id  #监听测试用例的信道
     base="/home/xiaosatianyu/workspace/git/driller-yyy/driller"
@@ -31,18 +31,18 @@ def start_listener(workdir):
     p = subprocess.Popen(args) #启动listen.py   #要启动这个脚本成功,必须在driller的目录下
 
     
-def main(argv):
+def start_sym_test(binary_path):
     #seed_dir="/tmp/driller/claw32/sync/fuzzer-master"
     #seed_dir="/tmp/output-yyy"
     seed_dir="/home/xiaosatianyu/Desktop/driller/seed"
+    
     ##unix--------------------------
     #binary_path="/home/xiaosatianyu/Desktop/driller/binary-unix/fauxware"
     #binary_path="/home/xiaosatianyu/Desktop/driller/binary-unix/Snail_Mail"
     ##cgc---------------
-    binary_path="/home/xiaosatianyu/Desktop/driller/binary-cgc/CROMU_00046"
     
+    #binary_path="/home/xiaosatianyu/Desktop/driller/binary-cgc/YAN01_00015"
     binary=os.path.basename(binary_path)
-    proc=[]
     
     input_data_path=os.path.join(seed_dir,"test")
     input_data = open(input_data_path, "rb").read() #读取测试用例内容
@@ -68,7 +68,20 @@ def main(argv):
                         tag, 
                         input_from, 
                         afl_input_para)
-    
+#end start_sym_test
+
+       
     
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    binaries_dir="/home/xiaosatianyu/Desktop/driller/生成数量多的cgc"
+    target_pros=os.listdir(binaries_dir)
+    target_pros.sort()
+    for i in target_pros:
+        if os.path.exists(os.path.join("/tmp/driller",i)):
+            #表示已经存在了
+            continue
+        target_pro=os.path.join(binaries_dir,i)
+        print "deal with %s" % os.path.basename(target_pro)
+        start_sym_test(target_pro)
+        
+    sys.exit()

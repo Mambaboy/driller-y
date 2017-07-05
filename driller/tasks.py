@@ -1,35 +1,36 @@
 #coding=utf-8
-import fuzzer
-import hashlib
-import logging
 import os
-import subprocess
 import time
-
+import pcap
+import redis
+import fuzzer
+import logging
+import hashlib
+import subprocess
 from celery import Celery
 import config
-import redis
-
 from driller import Driller
-import pcap
+
 from sys import argv
 import simuvex
-
 import shutil
-
+import signal
+import sys
 
 l = logging.getLogger("driller.tasks")
 #l.setLevel(logging.DEBUG)
 
-backend_url = "redis://%s:%d" % (config.REDIS_HOST, config.REDIS_PORT) #
-app = Celery('tasks', broker=config.BROKER_URL, backend=backend_url) #broker是消息中间件,backend
+#backend_url = "redis://%s:%d" % (config.REDIS_HOST, config.REDIS_PORT) #
+app = Celery('tasks', broker=config.BROKER_URL, backend=config.Backend_URL) #
 app.conf.CELERY_ROUTES = config.CELERY_ROUTES
 app.conf['CELERY_ACKS_LATE'] = True
 app.conf['CELERYD_PREFETCH_MULTIPLIER'] = 1
 
-redis_pool = redis.ConnectionPool(host=config.REDIS_HOST, port=config.REDIS_PORT, db=config.REDIS_DB) #一个链接池
+redis_pool = redis.ConnectionPool(host=config.REDIS_HOST, port=config.REDIS_PORT, db=config.REDIS_DB) #
 
-def get_fuzzer_id(input_data_path): #get testcase-id in the queue catalog 删减一些名称
+
+
+def get_fuzzer_id(input_data_path): #get testcase-id in the queue catalog 
     # get the fuzzer id
     abs_path = os.path.abspath(input_data_path)
     if "sync/" not in abs_path or "id:" not in abs_path:
@@ -40,14 +41,14 @@ def get_fuzzer_id(input_data_path): #get testcase-id in the queue catalog 删减
     return fuzzer_name + ",src:" + input_id
 
 @app.task
-def drill(binary_path, input_data, input_data_path, bitmap_hash, tag, input_from, afl_input_para):
+def drill(binary_path, input_data, input_data_path, bitmap_hash, tag, input_from, afl_input_para,time_limit_for_pro):
     binary=os.path.basename(binary_path)
-    redis_inst = redis.Redis(connection_pool=redis_pool) #连接redis数据库
-    fuzz_bitmap = redis_inst.hget(binary + '-bitmaps', bitmap_hash)  #get the bitmap  在request_drilling是上传的,也算是即时从文件中读取的
+    redis_inst = redis.Redis(connection_pool=redis_pool) #
+    fuzz_bitmap = redis_inst.hget(binary + '-bitmaps', bitmap_hash)  #get the bitmap  
     if fuzz_bitmap is None:
-        fuzz_bitmap="\xff" * 65535 #调试时使用,表示还没有路径
+        fuzz_bitmap="\xff" * 65535 #
    
-    #-------------------------配置符号执行时的一些特殊参数-------------------------------------   
+    #--------------------------------------------------------------   
     if input_from=="stdin":
         yargv=None
         add_fs=None
@@ -60,8 +61,8 @@ def drill(binary_path, input_data, input_data_path, bitmap_hash, tag, input_from
                 afl_input_para[i]=afl_input_para[i].replace("@@",input_data_path)
                 break
         yargv=[binary_path]+afl_input_para
-        #添加符号文件
-        input_Simfile = simuvex.SimFile(input_data_path, 'rw', size=500) #创建符号文件, size是字节 
+        
+        input_Simfile = simuvex.SimFile(input_data_path, 'rw', size=500) #
         add_fs = {
         input_data_path: input_Simfile
         } 
@@ -72,27 +73,28 @@ def drill(binary_path, input_data, input_data_path, bitmap_hash, tag, input_from
     #add_env={"HOME": os.environ["HOME"]}   
     add_env=None
     
-    #-------------------------完成配置符号执行时的一些特殊参数-------------------------------   
+    #-------------------------complete-------------------------------   
     driller = Driller(binary_path, input_data, input_data_path, fuzz_bitmap, tag, redis=redis_inst,argv=yargv,
-                      add_fs=add_fs,add_env=add_env,add_exclude_sim_pro=add_exclude_sim_pro) 
-    #tag是 类如 fuzzer-master,src:000108
+                      add_fs=add_fs,add_env=add_env,add_exclude_sim_pro=add_exclude_sim_pro,
+                      time_limit_for_pro=time_limit_for_pro, sy_ex_time_limit=10*60
+                      ) 
+    #tag fuzzer-master,src:000108
     
     try:
-        return driller.drill() #得到的路径保存在 driller._generated集合中
+        return driller.drill() #
     #except AttributeError as e:  #debug
     except Exception as e:
         l.error("encountered %r exception when drilling into \"%s\"", e, binary) 
         l.error("input was %r", input_data)
 
-def input_filter(fuzzer_dir, inputs): #这个函数在task中,也没有考虑到非字符串的情况
+def input_filter(fuzzer_dir, inputs): #
 
     traced_cache = os.path.join(fuzzer_dir, "traced")
 
     traced_inputs = set()
     if os.path.isfile(traced_cache):
         with open(traced_cache, 'rb') as f:
-            #这里可能可以改成hash的形式
-            traced_inputs = set(f.read().split('\n')) #分隔符默认为所有的空字符 这里为什么要分割?
+            traced_inputs = set(f.read().split('\n')) 
 
     new_inputs = filter(lambda i: i not in traced_inputs, inputs)
 
@@ -110,10 +112,11 @@ def request_drilling(fzr):
     :return: list of celery AsyncResults, we accumulate these so we can revoke them if need be
     '''
 
-    d_jobs = [ ] #利用一个测试用例发现新路径的数量
+    d_jobs = [ ] #
     bitmap_f = os.path.join(fzr.out_dir, "fuzzer-master", "fuzz_bitmap") 
     
-    ##add by yyy---------------------------------------------------
+    
+    
     ##to assure the file is exit
     l.info("waiting for fuzz_bitmap")
     while not os.path.exists(bitmap_f):
@@ -121,23 +124,29 @@ def request_drilling(fzr):
     ##end--------------------------------------------------------
     l.info("fuzz_bitmap is generated, go on")
     
-    bitmap_data = open(bitmap_f, "rb").read() #bitmap文件
-    bitmap_hash = hashlib.sha256(bitmap_data).hexdigest() #文件内容的hash
-    redis_inst = redis.Redis(connection_pool=redis_pool) #一个链接实例
-    redis_inst.hset(fzr.binary_id + '-bitmaps', bitmap_hash, bitmap_data) #发送bitmap, hset function 一个name对应一个dic来存储 , 发布到池子里
+    bitmap_data = open(bitmap_f, "rb").read() #bitmap
+    bitmap_hash = hashlib.sha256(bitmap_data).hexdigest() #
+    redis_inst = redis.Redis(connection_pool=redis_pool) #
+    redis_inst.hset(fzr.binary_id + '-bitmaps', bitmap_hash, bitmap_data) #
 
-    in_dir = os.path.join(fzr.out_dir, "fuzzer-master", "queue") #AFL生成测试用例的目录
+    in_dir = os.path.join(fzr.out_dir, "fuzzer-master", "queue") #
     
-    # ignore hidden files
-    inputs = filter(lambda d: not d.startswith('.'), os.listdir(in_dir))  #queue下的测试用例
-
+    ##get inputs
+    if fzr.inputs_sorted :
+        inputs=fzr.get_inputs_by_distance("fuzzer-master")
+    else:
+        ##get the inputs in turns
+        inputs = filter(lambda d: not d.startswith('.'), os.listdir(in_dir))  
+    
     # filter inputs which have already been sent to driller
-    inputs = input_filter(os.path.join(fzr.out_dir, "fuzzer-master"), inputs) #过滤已经传递给drill的测试用例 在输出目录下traced文件记录已经传递给driller的测试用例
+    inputs = input_filter(os.path.join(fzr.out_dir, "fuzzer-master"), inputs) # 删除已经跟踪的
 
-    # submit a driller job for each item in the queue  对每个测试用例符号执行跑
-    for input_file in inputs:
+    # submit a driller job for each item in the queue  
+    for input_file in inputs: 
+        if fzr.timed_out():
+            break
         input_data_path = os.path.join(in_dir, input_file) 
-        input_data = open(input_data_path, "rb").read()  # 读取测试用例内容
+        input_data = open(input_data_path, "rb").read()  # 
         # d_jobs.append(drill.delay(fzr.binary_id, input_data, bitmap_hash, get_fuzzer_id(input_data_path)))
         d_jobs.append(drill(
                 fzr.binary_path,
@@ -146,19 +155,19 @@ def request_drilling(fzr):
                 bitmap_hash, 
                 get_fuzzer_id(input_data_path), 
                 input_from=fzr.input_from, 
-                afl_input_para=fzr.afl_input_para)
-                )  # 这里只传bitmap_hash, 具体内容通过redis传
-        # 这里应该可以通过某一种机制,将结果告诉afl, 然后afl就可以用了
-        # 这里的启动参数要用对应的目标测试用例
-    return d_jobs
+                afl_input_para=fzr.afl_input_para,
+                time_limit_for_pro=fzr.time_limit)
+                )  # 
+        
+    return d_jobs #当前的测试用例跑完了,退出看看time_out,没有的
 
 def start_listener(fzr):
     '''
     start a listener for driller inputs
     '''
 
-    driller_queue_dir = os.path.join(fzr.out_dir, "driller", "queue") #用于保存符号执行生成测试用例的目录
-    channel = "%s-generated" % fzr.binary_id  #监听测试用例的信道
+    driller_queue_dir = os.path.join(fzr.out_dir, "driller", "queue") #
+    channel = "%s-generated" % fzr.binary_id  #
 
     # find the bin directory listen.py will be installed in
     base = os.path.dirname(__file__)
@@ -170,13 +179,10 @@ def start_listener(fzr):
         raise Exception("could not find driller listener install directory")
 
     args = [os.path.join(base, "bin", "driller", "listen.py"), driller_queue_dir, channel]
-    args[0]="/home/xiaosatianyu/workspace/git/driller-yyy/driller/bin/driller/listen.py"
-    args[1]="/tmp/driller/CROMU_00046/sync/queue"
-    args[2]="CROMU_00046-generated"
-    p = subprocess.Popen(args) #启动listen.py  
+    p = subprocess.Popen(args) 
 
     # add the proc to the fuzzer's list of processes
-    fzr.procs.append(p) #添加进程对象
+    fzr.procs.append(p) #
 
 def clean_redis(fzr):
     redis_inst = redis.Redis(connection_pool=redis_pool)
@@ -193,23 +199,26 @@ def clean_redis(fzr):
     # delete the fuzz bitmaps
     redis_inst.delete("%s-bitmaps" % fzr.binary_id)
 
-#注意这个修饰符号, 表示被包装调用,可以传递参数
+@app.task
+def yyy():
+    return "yyyy"  
+
 
 @app.task  
-def fuzz(binary_path,input_from,afl_input_para,afl_engine): #这里的参数只有程序名称,所以主函数的目标程序目录和config下的都要配置,且需要一致
-    
+def fuzz(binary_path,input_from,afl_input_para,afl_engine):
+#     return
     binary=os.path.basename(binary_path)
     l.info("beginning to fuzz \"%s\"", binary)
     seeds=[]
     seed_dir = config.SEED
-    for seed in os.listdir(seed_dir):  # 遍历多个目标程序, 这里是程序名称
-        # 复制seed到input目录
-        with open(os.path.join(seed_dir, seed), 'rb') as f:  #b 表示一个二进制文件
+    for seed in os.listdir(seed_dir):  # 
+        # copy seed to input catalory
+        with open(os.path.join(seed_dir, seed), 'rb') as f:  
             seeds.append(f.read())
             f.close()
     ##end--------------------------------------------------------
     
-    #配置种子测试用例 , 语料库
+    #
     # look for a pcap
 #     pcap_path = os.path.join(config.PCAP_DIR, "%s.pcap" % binary)
 #     if os.path.isfile(pcap_path):
@@ -222,7 +231,7 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine): #这里的参数只�
     # TODO enable dictionary creation, this may require fixing parts of the fuzzer module
     #fzr = fuzzer.Fuzzer(binary_path, config.FUZZER_WORK_DIR, config.FUZZER_INSTANCES, seeds=seeds, create_dictionary=True)
     
-    #这里暂时不用字典生成,这个字典生成是利用控制流图方面的 这里的启动参数用@@
+    #no dictionary
     fzr = fuzzer.Fuzzer(binary_path, 
                         config.FUZZER_WORK_DIR, 
                         config.FUZZER_INSTANCES,
@@ -231,31 +240,35 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine): #这里的参数只�
                         afl_engine=afl_engine,
                         input_from=input_from,
                         afl_input_para=afl_input_para,
-                        time_limit=4*60*60, #second
-                        comapre_afl=True)
+                        time_limit=60*60, #second
+                        comapre_afl=True,
+                        inputs_sorted=True)
     
     early_crash = False
     try:
-        fzr.start() #启动afl fzr维护了对所有afl引擎的接口 这个afl是对应与和driller配合的afl
-        
-        # start a listening for inputs produced by driller 启动监听对象,将新的测试用例保存到driller目录中
+        fzr.start() #
+        # start a listening for inputs produced by driller 
         start_listener(fzr)
 
         # clean all stale redis data
         clean_redis(fzr)
 
         # list of 'driller request' each is a celery async result object
-        driller_jobs = [ ] #记录每次调用driller后的结果
+        driller_jobs = list() #
         
-        time.sleep(2)#保证AFL的相关配置设置完成
+        time.sleep(2)#
+        #record the start
+        redis_inst = redis.Redis(host=config.REDIS_HOST, port=config.REDIS_PORT, db=config.REDIS_DB) #db ddefault is 1
+        redis_inst.publish("tasks", binary+' start'+'each time is '+str(fzr.time_limit/60)+' minites') 
+        
         # start the fuzzer and poll for a crash, timeout, or driller assistance  
-        #while not fzr.found_crash() and not fzr.timed_out():  # 此时afl不会暂停, 继续跑  
-        while  not fzr.timed_out():  # 此时afl不会暂停, 继续跑  
+        #while not fzr.found_crash() and not fzr.timed_out():  # 
+        while  not fzr.timed_out():  # 
             if 'fuzzer-master' in fzr.stats and 'pending_favs' in fzr.stats['fuzzer-master']:  
-                if not int(fzr.stats['fuzzer-master']['pending_favs']) > 510000: #即afl中没有大量优质种子测试用例的时候,启动符号执行来辅助
+                if not int(fzr.stats['fuzzer-master']['pending_favs']) > 510000: #
                     l.info("[%s] driller being requested!", binary) 
-                    driller_jobs.extend(request_drilling(fzr))  #调用符号执行, extend表示在list末尾添加多个值
-            time.sleep(config.CRASH_CHECK_INTERVAL) #间隔时间
+                    driller_jobs.extend(request_drilling(fzr))  #
+            time.sleep(config.CRASH_CHECK_INTERVAL) #
         # make sure to kill the fuzzers when we're done
         fzr.kill()
         
@@ -264,28 +277,33 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine): #这里的参数只�
         l.info("binary crashed on dummy testcase, moving on...")
         early_crash = True
 
-    # we found a crash!
-    if early_crash or fzr.found_crash():
-        l.info("found crash for \"%s\"", binary_path)
-
-        # publish the crash  提供信息
-        redis_inst = redis.Redis(host=config.REDIS_HOST, port=config.REDIS_PORT, db=config.REDIS_DB) #db默认是1
-        redis_inst.publish("crashes", binary_path) #发现crash,发布信息
-        
-        #保存起来 
-        if os.path.isdir("/tmp/driller/file"):
-            shutil.copytree('/tmp/driller/file',
-                             os.path.join('/tmp/driller', 
-                                          os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(binary_path))))))
-        #这里没有用task的形式
-        # revoke any driller jobs which are still working
+#     # we found a crash!
+#     if early_crash or fzr.found_crash():
+#         l.info("found crash for \"%s\"", binary_path)
+# 
+#         # publish the crash  
+#         redis_inst = redis.Redis(host=config.REDIS_HOST, port=config.REDIS_PORT, db=config.REDIS_DB) #db ddefault is 1
+#         redis_inst.publish("crashes", binary) 
+#         
+#         # revoke any driller jobs which are still working
 #         for job in driller_jobs:
 #             if job.status == 'PENDING':
 #                 job.revoke(terminate=True)
 
-    if fzr.timed_out():
+    if early_crash or fzr.timed_out():
+        # publish the time_out tasks
+        redis_inst = redis.Redis(host=config.REDIS_HOST, port=config.REDIS_PORT, db=config.REDIS_DB) #db ddefault is 1
+        redis_inst.publish("tasks", binary+' time_out') 
         l.info("timed out while fuzzing \"%s\"", binary)
+        
+        # revoke any driller jobs which are still working
+        for job in driller_jobs:
+            if job.status == 'PENDING':
+                job.revoke(terminate=True)
 
     # TODO end drilling jobs working on the binary
 
     return fzr.found_crash() or early_crash
+
+
+
