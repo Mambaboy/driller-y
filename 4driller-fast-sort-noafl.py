@@ -16,6 +16,7 @@ import sys
 import redis
 import driller.tasks
 import driller.config as config
+import time
 
 
 '''
@@ -28,7 +29,7 @@ def start(binary,afl_engine):
     #针对cgc程序
     binary_dir=config.BINARY_DIR_CGC #yyy
     jobs = [ ]
-    jobs_input_sort = [ ]
+    jobs_add = [ ]
     binaries = os.listdir(binary_dir)
     binaries.sort()
     if binary is not None: #这里配置单目标
@@ -59,8 +60,8 @@ def start(binary,afl_engine):
         ##end  ----------------------------------
         
         identifier = binary  
-        if '-fast' in pathed_binary:
-            jobs_input_sort.append(pathed_binary) #input sort对比对象的程序
+        if '#' in pathed_binary:
+            jobs_add.append(pathed_binary) #input sort对比对象的程序
         else:
             jobs.append(pathed_binary)  #正常的程序
         
@@ -83,10 +84,10 @@ def start(binary,afl_engine):
     jobs = filter(lambda j: j not in filter_t, jobs) #过滤出没有破解的程序
     jobs.sort()
     l.info("going to work on %d", len(jobs))
-
+#     time.sleep(60*60*7.5)
     for binary_path in jobs:     #这里是clery下 task模块中的delay函数
         #driller.tasks.fuzz.delay(binary_path,input_from,afl_input_para,afl_engine) #这里的delay是对fuzz这个函数用的 是celery的函数
-        driller.tasks.fuzz(binary_path, input_from,afl_input_para,afl_engine,comapre_afl=True, inputs_sorted=True)
+        driller.tasks.fuzz(binary_path+'#4', input_from,afl_input_para,afl_engine,comapre_afl=False, inputs_sorted=True)
 
     l.info("listening for tasks..")
 
@@ -102,35 +103,19 @@ def start(binary,afl_engine):
 #             cnt += 1
      
     ##监听task完成情况
-    redis_inst = redis.Redis(host=config.REDIS_HOST, port=config.REDIS_PORT, db=config.REDIS_DB)
-    p = redis_inst.pubsub() #这是一个订阅发布器
-    p.subscribe("tasks") #订阅 crashed 频道, 在fuzz函数中发射的
-    
-    for msg in p.listen():
-        if msg['type'] == 'message':
-            l.info("task: %s",msg['data'])       
+#     redis_inst = redis.Redis(host=config.REDIS_HOST, port=config.REDIS_PORT, db=config.REDIS_DB)
+#     p = redis_inst.pubsub() #这是一个订阅发布器
+#     p.subscribe("tasks") #订阅 crashed 频道, 在fuzz函数中发射的
+#     
+#     for msg in p.listen():
+#         if msg['type'] == 'message':
+#             l.info("task: %s",msg['data'])       
 
 
   
 def main(argv):
-    ##annotation by yyy------------------------
-#     if len(argv) < 2:
-#         print "usage: %s <binary_dir>" % argv[0]
-#         return 1
-   
-#     binary_dir = sys.argv[1] #这里的参数和config中的参数有什么区别?
-
-#     start(binary_dir)
     
-    #针对cgc程序
-    
-    binary=None
-    if len(argv)<2:
-        afl_engine="default"  ## fast yyy or default; default is shelfish-afl
-    else:    
-        afl_engine=argv[1] #"fast" "yyy"
-            
-    start(binary,afl_engine)
+    start(None,"fast")
     ## end ---------------------
     
     

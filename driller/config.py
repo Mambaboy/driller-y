@@ -21,6 +21,8 @@ QEMU_DIR=None
 # directory containing the binaries, used by the driller node to find binaries
 BINARY_DIR_UNIX='/home/xiaosatianyu/Desktop/driller-desk/binary-unix'
 BINARY_DIR_CGC='/home/xiaosatianyu/Desktop/driller-desk/binary-cgc'
+BINARY_DIR_CGC2='/home/xiaosatianyu/Desktop/driller-desk/binary-cgc2'
+BINARY_DIR_CGC_TEST='/home/xiaosatianyu/Desktop/driller-desk/binary-cgc-test'
 # directory containing the pcap corpus
 PCAP_DIR=None  #语料库
 
@@ -39,10 +41,10 @@ DEBUG_DIR = None
 ### Fuzzer options
 
 # how often to check for crashes in seconds
-CRASH_CHECK_INTERVAL=60 #间隔多久判断一次是否需要符号执行
+CRASH_CHECK_INTERVAL=4*60 #间隔多久判断一次是否需要符号执行
 
 # how long to fuzz before giving up in seconds
-FUZZ_TIMEOUT=60  #这个好像没有用到
+FUZZ_TIMEOUT=1  #这个好像没有用到
 
 # how long before we kill a dictionary creation process
 DICTIONARY_TIMEOUT=None

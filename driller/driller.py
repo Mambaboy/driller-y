@@ -36,7 +36,7 @@ class Driller(object):
         :param fuzz_bitmap: AFL's bitmap of state transitions (defaults to empty)
         :param redis: redis.Redis instance for coordinating multiple Driller instances
         :param hooks: dictionary of addresses to simprocedures
-        :param argv: Optionally specify argv params (i,e,: ['./calc', 'parm1']) defaults to binary name with no params.
+        :param argv: Optionally specify argv params (pro,e,: ['./calc', 'parm1']) defaults to binary name with no params.
         :param fs: the Simfile to use
         :param add_env: the environment variable 
         :param add_exclude_sim_pro: the exclude simprocedure
@@ -144,8 +144,8 @@ class Driller(object):
         if config.DRILL_TIMEOUT is not None:
             signal.alarm(config.DRILL_TIMEOUT)
 
-        for i in self._drill_input():
-            yield i
+        for pro in self._drill_input():
+            yield pro
 
     def _drill_input(self):
         '''
@@ -183,6 +183,7 @@ class Driller(object):
         branches = t.next_branch() # tracer.Tracer 下的函数, branches是 PathGroup类  get some missed state; 在这里 沿着原本的路径有一个active,沿着另一个有一个missed;即上一个地址处有一个分叉
         while len(branches.active) > 0 and t.bb_cnt < len(t.trace):  # Bool
             if  self.whole_driller_timed_out(): #the time limitation for this input
+                l.info("driller time out ")
                 break
             # check here to see if a crash has been found
             if self.redis and self.redis.sismember(self.identifier + "-finished", True):  #这里的crash由谁保存的?和AFL的crash冲突吗
@@ -213,9 +214,9 @@ class Driller(object):
                             if w is not None:
                                 #pass
                                 yield w  # 生成器, 返回的是一个tuple, 有关于新的测试用例
-                            for i in self._symbolic_explorer_stub(path): #找到一条新的路径之后,继续纯符号执行一定的步数至再产生累计1024个state
+                            for pro in self._symbolic_explorer_stub(path): #找到一条新的路径之后,继续纯符号执行一定的步数至再产生累计1024个state
                                 #pass
-                                yield i # 生成器
+                                yield pro # 生成器
                         else:
                             l.debug("path to %#x was not satisfiable", transition[1])
 
@@ -252,8 +253,8 @@ class Driller(object):
 #--------只跑一条路径 
 #         while  accumulated < 100000:  #
 #             def some_eq(pg):
-#                 for i in pg.active:
-#                     if i.state.scratch.guard.op=="__eq__" and not i.state.addr in [134514675,134514660,134514690,134514705] or i.state.addr in [134514810]:
+#                 for pro in pg.active:
+#                     if pro.state.scratch.guard.op=="__eq__" and not pro.state.addr in [134514675,134514660,134514690,134514705] or pro.state.addr in [134514810]:
 #                         return True
 #             pg.step(until=some_eq)
 #             
@@ -261,28 +262,28 @@ class Driller(object):
 #             def remove_not_eq(path):
 #                 if path.state.scratch.guard.op != "__eq__":
 #                     return True
-#             for i in pg.active:
-#                 if i.state.scratch.guard.op=="__eq__":
+#             for pro in pg.active:
+#                 if pro.state.scratch.guard.op=="__eq__":
 #                     pg.drop(filter_func=remove_not_eq) #只保留等号约束的路径
 #                     break;
                 
             #path=successors[-1]
 #             if len(successors) >1:
 #                 pass
-#                 for i in successors:
+#                 for pro in successors:
 #                     pass
-#                     successors[i].state.satisfiable() #这里的路径应该是全部可满足的
-#                     successors[i].state.scratch.guard #比较当前跳转的约束复杂 Bool
+#                     successors[pro].state.satisfiable() #这里的路径应该是全部可满足的
+#                     successors[pro].state.scratch.guard #比较当前跳转的约束复杂 Bool
 #                 path=successors[0]
 #             steps += 1
             # dump all inputs
             #accumulated = steps * (len(pg.active) + len(pg.deadended)) #这里是一种探索方式的上限
             #l.info("symbolic exploration %d",accumulated)
 #             if(new_path_num>old_path_num):  #found new path 
-#                 for i in xrange(new_path_num):
+#                 for pro in xrange(new_path_num):
 #                     try:
-#                         if pg.active[i].state.satisfiable(): #如果是可满足的
-#                             w = self._writeout(pg.active[i].addr_trace[-1], pg.active[i])  # SimFile
+#                         if pg.active[pro].state.satisfiable(): #如果是可满足的
+#                             w = self._writeout(pg.active[pro].addr_trace[-1], pg.active[pro])  # SimFile
 #                             if w is not None:
 #                                 yield w
 #                                 #pass
@@ -303,10 +304,10 @@ class Driller(object):
 #             print "symbolic exploration accumulated %d" % accumulated
 #             l.info("symbolic exploration %d",accumulated)
 #             if(new_path_num>old_path_num):  #found new path 
-#                 for i in xrange(new_path_num):
+#                 for pro in xrange(new_path_num):
 #                     try:
-#                         if pg.active[i].state.satisfiable(): #如果是可满足的
-#                             w = self._writeout(pg.active[i].addr_trace[-1], pg.active[i],len(self.argv))  # SimFile
+#                         if pg.active[pro].state.satisfiable(): #如果是可满足的
+#                             w = self._writeout(pg.active[pro].addr_trace[-1], pg.active[pro],len(self.argv))  # SimFile
 #                             if w is not None:
 #                                 yield w
 #                                 #pass
@@ -327,11 +328,14 @@ class Driller(object):
 #                     pass
 
 
-
 #-----------原始的  , 发现新路径到终点,再生成    
         #计时
         while len(pg.active) and accumulated < 5000: #修改这里的逻辑,每次新发现一个state,就生成
-            if  self.single_sy_ex_timed_out(start_time): ##单次的时间上限
+            if  self.single_sy_ex_timed_out(start_time) or self.whole_driller_timed_out(): ##单次的时间上限,或者总时间到了
+                if self.single_sy_ex_timed_out(start_time):
+                    l.info("symbolic time out ")
+                else:
+                    l.info("driller time out ")   
                 break
             pg.step() #这个是在线符号执行
             steps += 1
@@ -344,6 +348,13 @@ class Driller(object):
   
         pg.stash(from_stash='deadended', to_stash='active') #为什么这么移动? deadended是结束路, 是因为预约束吗
         for dumpable in pg.active: #dumpable是 path 类型的
+            if  self.single_sy_ex_timed_out(start_time) or self.whole_driller_timed_out(): ##单次的时间上限,或者总时间到了
+                if self.single_sy_ex_timed_out(start_time):
+                    l.info("symbolic time out ")
+                else:
+                    l.info("driller time out ")   
+                break
+            
             try:
                 if dumpable.state.satisfiable(): #如果是可满足的
                     w = self._writeout(dumpable.addr_trace[-1], dumpable,1) 
@@ -476,6 +487,7 @@ class Driller(object):
     def whole_driller_timed_out(self): 
         '''
         configure to end drilling of this input
+        针对该目标程序的时间上限判断
         '''
         if self.time_limit_for_pro is None:
             return False  # 默认是false
@@ -484,6 +496,7 @@ class Driller(object):
     def single_sy_ex_timed_out(self,this_start_time): 
         '''
         configure to end drilling of this symbolice exploration
+        每条路径符号执行的时间上限判断
         '''
         if self.sy_ex_time_limit is None:
             return False  # 默认是false

@@ -59,7 +59,7 @@ def start(binary,afl_engine):
         ##end  ----------------------------------
         
         identifier = binary  
-        if '-fast' in pathed_binary:
+        if '#'  in pathed_binary:
             jobs_input_sort.append(pathed_binary) #input sort对比对象的程序
         else:
             jobs.append(pathed_binary)  #正常的程序
@@ -86,7 +86,7 @@ def start(binary,afl_engine):
 
     for binary_path in jobs:     #这里是clery下 task模块中的delay函数
         #driller.tasks.fuzz.delay(binary_path,input_from,afl_input_para,afl_engine) #这里的delay是对fuzz这个函数用的 是celery的函数
-        driller.tasks.fuzz(binary_path, input_from,afl_input_para,afl_engine,comapre_afl=True, inputs_sorted=True)
+        driller.tasks.fuzz(binary_path+'#2', input_from,afl_input_para,afl_engine,comapre_afl=False, inputs_sorted=True)
 
     l.info("listening for tasks..")
 
@@ -113,24 +113,8 @@ def start(binary,afl_engine):
 
   
 def main(argv):
-    ##annotation by yyy------------------------
-#     if len(argv) < 2:
-#         print "usage: %s <binary_dir>" % argv[0]
-#         return 1
-   
-#     binary_dir = sys.argv[1] #这里的参数和config中的参数有什么区别?
-
-#     start(binary_dir)
     
-    #针对cgc程序
-    
-    binary=None
-    if len(argv)<2:
-        afl_engine="default"  ## fast yyy or default; default is shelfish-afl
-    else:    
-        afl_engine=argv[1] #"fast" "yyy"
-            
-    start(binary,afl_engine)
+    start(None,"yyy")
     ## end ---------------------
     
     

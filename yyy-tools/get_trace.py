@@ -21,7 +21,7 @@ def dynamic_trace(tracer_qemu,input_path,target_binary,output_dir,test_from_dir,
         lname = tempfile.mktemp(dir="/dev/shm/", prefix="tracer-")
         args = [tracer_qemu]
         
-        is_crash_case = False  # 处理crash时的flag,只记录崩溃处的基本块
+        is_crash_case = False  # 处理crash时的flag,只记录崩溃处的基本块 ba
         crash_addr=[]
         
         args += ["-d", "exec", "-D", lname, target_binary]

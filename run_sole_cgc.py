@@ -26,7 +26,7 @@ Large scale test script. Should just require pointing it at a directory full of 
 #def start(binary_dir):
 def start(binary,afl_engine):
     # cgc program
-    binary_dir=config.BINARY_DIR_CGC #yyy
+    binary_dir=config.BINARY_DIR_CGC2 #yyy
     
     jobs = [ ]
     binaries = os.listdir(binary_dir)
@@ -78,7 +78,8 @@ def start(binary,afl_engine):
 
     for binary_path in jobs:     
         #tasks.fuzz.delay(binary_path,input_from,afl_input_para,afl_engine) 
-        driller.tasks.fuzz(binary_path,input_from,afl_input_para,afl_engine) 
+        driller.tasks.fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl=True,inputs_sorted=False) 
+     
 
     l.info("listening for tasks..")
 

@@ -30,6 +30,7 @@ def start(binary,afl_engine):
     #针对cgc程序
     binary_dir=config.BINARY_DIR_CGC #yyy
     jobs = [ ]
+    jobs_input_sort = [ ]
     binaries = os.listdir(binary_dir)
     if binary is not None: #这里配置单目标
         binaries=[binary] # handle
@@ -59,8 +60,13 @@ def start(binary,afl_engine):
         ##end  ----------------------------------
         
         identifier = binary  
-        jobs.append(pathed_binary)  #添加的是路径
+        if '-sort' in pathed_binary:
+            jobs_input_sort.append(pathed_binary) #input sort对比对象的程序
+        else:
+            jobs.append(pathed_binary)  #正常的程序
         
+    jobs.sort()
+    jobs_input_sort.sort()
     l.info("%d binaries found", len(jobs))
     l.debug("binaries: %r", jobs)
 
@@ -82,7 +88,9 @@ def start(binary,afl_engine):
     l.info("going to work on %d", len(jobs))
 
     for binary_path in jobs:     #这里是clery下 task模块中的delay函数
-        tasks.fuzz.delay(binary_path,input_from,afl_input_para,afl_engine) #这里的delay是对fuzz这个函数用的 是celery的函数
+#         tasks.fuzz.delay(binary_path,input_from,afl_input_para,afl_engine,inputs_sorted=False) 
+#         tasks.fuzz.delay(binary_path+'-1',input_from,afl_input_para,afl_engine,comapre_afl=False,inputs_sorted=True) 
+        tasks.fuzz.delay(binary_path,     input_from,afl_input_para,afl_engine,comapre_afl=True, inputs_sorted=False) 
         #tasks.fuzz(binary_path,input_from,afl_input_para,afl_engine) 
 
     l.info("listening for tasks..")
@@ -128,10 +136,10 @@ def main(argv):
     start(binary,afl_engine)
     ## end ---------------------
     
-def handler(signal_num,frame):
-    print "\nYou Pressed Ctrl-C11."
-    sys.exit(signal_num)
-signal.signal(signal.SIGINT, handler)  
-    
+# def handler(signal_num,frame):
+#     print "\nYou Pressed Ctrl-C11."
+#     sys.exit(signal_num)
+# signal.signal(signal.SIGINT, handler)  
+#     
 if __name__ == "__main__":
     sys.exit(main(sys.argv))

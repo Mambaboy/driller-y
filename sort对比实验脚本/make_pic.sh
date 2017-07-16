@@ -1,8 +1,7 @@
 
 out_put_dir=$1 #工作目录
 target=$2 #目标程序
-workdir="/home/xiaosatianyu/Desktop/driller-desk/record/driller4"
-#workdir"/tmp/driller"
+
 target_yyy_nosort_afl=$target'#1'
 target_yyy_sort_noafl=$target'#2'
 target_fast_nosort_afl=$target'#3'
@@ -36,17 +35,13 @@ set output './$target.png'
 #设置x轴
 set xdata time 		#设置x轴为时间
 set timefmt '%s'    #时间输入格式设置为seconds since the Unix epoch (1970-01-01, 00:00 UTC)
-#set format x "%y\n %b %d\n%H:%M" #x轴时间格式
+#set format x "%b %d\n%H:%M" #x轴时间格式
 set format x   "%H:%M" #时间格式
-#set xrange [0:600]
-
-
-set grid xtics linetype 0 linecolor rgb '#e0e0e0'
-set xtics font  "Times New Roman,16" 
+#set grid xtics linetype 0 linecolor rgb '#e0e0e0'
+#set xtics font  "Times New Roman,16" 
 set autoscale xfixmin
 set autoscale xfixmax
 set xlabel "Time(Hours)" font "Times New Roman,16" 
-
 
 #设置y轴
 #set ytics 80 font  "Times New Roman,16" 
@@ -64,19 +59,18 @@ set border #linecolor rgb '#50c0f0'
 set grid 
 
 #设置图例
-#set key inside  bottom Right font "DejaVu Sans,18" 
+set key inside  bottom Right font "DejaVu Sans,18" 
 #set label "ddd" at 0.5,0.5
 #set title "the number of test-cases with different paths"
 set key outside rmargin   "DejaVu Sans,15" 
 
   
-plot '/$workdir/$target_yyy_nosort_afl/sync/fuzzer-master/plot_data' using 1:4 with lines title 'Driller' linewidth 4 linetype 3, \\
-	 '/$workdir/$target_yyy_nosort_afl/sole/fuzzer-master/plot_data' using 1:4 with lines title 'AFL'    linewidth 4 linetype 4 ,\\
-	 '/$workdir/$target_fast_nosort_afl/sole/fuzzer-master/plot_data' using 1:4 with lines title 'DO-fuzzer'    linewidth 4 linetype 7 ,\\
-	 '/$workdir/$target_fast_sort_noafl/sync/fuzzer-master/plot_data' using 1:4 with lines title 'FAS' linewidth 4 linetype 10, \\
-	 #'/$workdir/$target_yyy_sort_noafl/sync/fuzzer-master/plot_data' using 1:4 with lines title 'driller-yyy-sort' linewidth 4 linetype 5, \\
-	 #'/$workdir/$target_fast_nosort_afl/sync/fuzzer-master/plot_data' using 1:4 with lines title 'driller-fast-nosort' linewidth 4 linetype 6, \\
-	 
+plot '/tmp/driller/$target_yyy_nosort_afl/sync/fuzzer-master/plot_data' using 1:4 with lines title 'driller-yyy-nosort' linewidth 4 linetype 3, \\
+	 '/tmp/driller/$target_yyy_nosort_afl/sole/fuzzer-master/plot_data' using 1:4 with lines title 'afl-yyy'    linewidth 4 linetype 4 ,\\
+	 '/tmp/driller/$target_yyy_sort_noafl/sync/fuzzer-master/plot_data' using 1:4 with lines title 'driller-yyy-sort' linewidth 4 linetype 5, \\
+	 '/tmp/driller/$target_fast_nosort_afl/sync/fuzzer-master/plot_data' using 1:4 with lines title 'driller-fast-nosort' linewidth 4 linetype 6, \\
+	 '/tmp/driller/$target_fast_nosort_afl/sole/fuzzer-master/plot_data' using 1:4 with lines title 'afl-fast'    linewidth 4 linetype 7 ,\\
+	 '/tmp/driller/$target_fast_sort_noafl/sync/fuzzer-master/plot_data' using 1:4 with lines title 'driller-fast-sort' linewidth 4 linetype 8, \\
 	  
 
 ######end the high_freq.png
