@@ -1,15 +1,18 @@
 
 out_put_dir=$1 #工作目录
 target=$2 #目标程序
-workdir="/home/xiaosatianyu/Desktop/driller-desk/record/driller4"
-#workdir"/tmp/driller"
-target_yyy_nosort_afl=$target'#1'
-target_yyy_sort_noafl=$target'#2'
-target_fast_nosort_afl=$target'#3'
-target_fast_sort_noafl=$target'#4'
+#workdir="/home/xiaosatianyu/Desktop/driller-desk/record/driller4"
+workdir="/tmp/driller"
 
-echo it is $target_yyy_nosort_afl
 
+NO_SORT_0=$target'#0'
+Random_Sort_1=$target'#1'
+BT_dup_Sort_2=$target'#2'
+BT_no_dup_Sort_3=$target'#3'
+BA_Sort_4=$target'#4'
+Min_Max_Sort_5=$target'#5'
+Short_first_Sort_6=$target'#6'
+Short_by_hamming_7=$target'#7'
 
 GNUPLOT=`which gnuplot 2>/dev/null`
 
@@ -21,8 +24,6 @@ if [ "$GNUPLOT" = "" ]; then
 fi
 
 echo "[*] Generating plots..."
-
-
 
 #cd $out_put_dir/$target
 cd $out_put_dir
@@ -70,12 +71,14 @@ set grid
 set key outside rmargin   "DejaVu Sans,15" 
 
   
-plot '/$workdir/$target_yyy_nosort_afl/sync/fuzzer-master/plot_data' using 1:4 with lines title 'Driller' linewidth 4 linetype 3, \\
-	 '/$workdir/$target_yyy_nosort_afl/sole/fuzzer-master/plot_data' using 1:4 with lines title 'AFL'    linewidth 4 linetype 4 ,\\
-	 '/$workdir/$target_fast_nosort_afl/sole/fuzzer-master/plot_data' using 1:4 with lines title 'DO-fuzzer'    linewidth 4 linetype 7 ,\\
-	 '/$workdir/$target_fast_sort_noafl/sync/fuzzer-master/plot_data' using 1:4 with lines title 'FAS' linewidth 4 linetype 10, \\
-	 #'/$workdir/$target_yyy_sort_noafl/sync/fuzzer-master/plot_data' using 1:4 with lines title 'driller-yyy-sort' linewidth 4 linetype 5, \\
-	 #'/$workdir/$target_fast_nosort_afl/sync/fuzzer-master/plot_data' using 1:4 with lines title 'driller-fast-nosort' linewidth 4 linetype 6, \\
+plot '/$workdir/$NO_SORT_0/sync/fuzzer-master/plot_data' using 1:4 with lines title 'NO\_SORT\_0' linewidth 4 linetype 3, \\
+	 '/$workdir/$Random_Sort_1/sync/fuzzer-master/plot_data' using 1:4 with lines title 'Random\_Sort\_1'    linewidth 4 linetype 4 ,\\
+	 '/$workdir/$BT_dup_Sort_2/sync/fuzzer-master/plot_data' using 1:4 with lines title 'BT_dup\_Sort\_2'    linewidth 4 linetype 5 ,\\
+	 '/$workdir/$BT_no_dup_Sort_3/sync/fuzzer-master/plot_data' using 1:4 with lines title 'BT\_no\_dup\_Sort\_3' linewidth 4 linetype 6, \\
+	 '/$workdir/$BA_Sort_4/sync/fuzzer-master/plot_data' using 1:4 with lines title 'BA\_Sort\_4' linewidth 4 linetype 7, \\
+	 '/$workdir/$Min_Max_Sort_5/sync/fuzzer-master/plot_data' using 1:4 with lines title 'Min\_Max\_Sort_5' linewidth 4 linetype 8, \\
+	 '/$workdir/$Short_first_Sort_6/sync/fuzzer-master/plot_data' using 1:4 with lines title 'Short\_first\_Sort_6' linewidth 4 linetype 9, \\
+	 '/$workdir/$Short_by_hamming_7/sync/fuzzer-master/plot_data' using 1:4 with lines title 'Short\_by\_hamming\_7' linewidth 4 linetype 10, \\
 	 
 	  
 

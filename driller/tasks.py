@@ -11,12 +11,15 @@ from celery import Celery
 import config
 from driller import Driller
 
+import sort_strategy
+
 from sys import argv
 import simuvex
 import shutil
 import signal
 import sys
 import gc
+from plumbum.cli.switches import switch
 
 l = logging.getLogger("driller.tasks")
 #l.setLevel(logging.DEBUG)
@@ -48,9 +51,9 @@ def drill(binary_path, input_data, input_data_path, bitmap_hash, tag, input_from
     '''
     binary=os.path.basename(binary_path)
     redis_inst = redis.Redis(connection_pool=redis_pool) #
-    fuzz_bitmap = redis_inst.hget(binary + '-bitmaps', bitmap_hash)  #get the bitmap  
+    fuzz_bitmap = redis_inst.hget(binary + '-bitmaps', bitmap_hash)  #get the bitmap   ##这是一个长传的字符,131072个字符.可以用[]读取,但是不能赋值
     if fuzz_bitmap is None:
-        fuzz_bitmap="\xff" * 65535 #
+        fuzz_bitmap="\xff" * 131072 #debug用
     #--------------------------------------------------------------   
     if input_from=="stdin":
         yargv=None
@@ -72,11 +75,11 @@ def drill(binary_path, input_data, input_data_path, bitmap_hash, tag, input_from
         add_exclude_sim_pro=["stat"]
     else:
         l.error("the input argv in driller is error")
-        
     #add_env={"HOME": os.environ["HOME"]}   
     add_env=None
-    
-    #-------------------------complete-------------------------------   
+    #complete confifure --------------------------------------------------------  
+
+
     driller = Driller(binary_path, input_data, input_data_path, fuzz_bitmap, tag, redis=redis_inst,argv=yargv,
                       add_fs=add_fs,add_env=add_env,add_exclude_sim_pro=add_exclude_sim_pro,
                       time_limit_for_pro=time_limit_for_pro, sy_ex_time_limit=10*60
@@ -120,29 +123,77 @@ def request_drilling(fzr):
     
     ##to assure the file is exit
     l.info("waiting for fuzz_bitmap")
-    while not os.path.exists(bitmap_f):
-        pass
-    ##end--------------------------------------------------------
-    l.info("fuzz_bitmap is generated, go on")
-     
-    bitmap_data = open(bitmap_f, "rb").read() #bitmap
-    bitmap_hash = hashlib.sha256(bitmap_data).hexdigest() #
-     
-    redis_inst = redis.Redis(connection_pool=redis_pool) #
-    redis_inst.hset(fzr.binary_id + '-bitmaps', bitmap_hash, bitmap_data) #
+#     while not os.path.exists(bitmap_f):
+#         pass
+#     ##end--------------------------------------------------------
+#     l.info("fuzz_bitmap is generated, go on")
+#           
+#     bitmap_data = open(bitmap_f, "rb").read() #bitmap
+#     bitmap_hash = hashlib.sha256(bitmap_data).hexdigest() #
+#     redis_inst = redis.Redis(connection_pool=redis_pool) #
+#     redis_inst.hset(fzr.binary_id + '-bitmaps', bitmap_hash, bitmap_data) # 构建hash对
+    
+    bitmap_hash=None # for debug
+    #------------------------------------------------------------------------
 
-    ##get inputs
-    in_dir = os.path.join(fzr.out_dir, "fuzzer-master", "queue") #
-    if fzr.inputs_sorted :
-        inputs=fzr.get_inputs_by_distance("fuzzer-master") #绝对路径,有很多空字符串
-        inputs.extend(filter(lambda d: not d.startswith('.') and os.path.basename(d) not in inputs, os.listdir(in_dir))); # 这个路径是
+    ##get inputs  according the strategy_id
+    in_dir = os.path.join(fzr.out_dir, "fuzzer-master", "queue")
+    if (fzr.strategy_id == '0'):
+        '''NO_SORT_0'''
+        inputs=sort_strategy.no_sort_0(in_dir, fzr)
+        l.info("strategy 0 successfull")
+#         time.sleep(60)
+        
+    elif (fzr.strategy_id == '1'):
+        '''Random_Sort_1'''
+        inputs=sort_strategy.random_sort_1(in_dir, fzr)
+        l.info("strategy 1 successfull")
+#         time.sleep(60)
+        
+    elif (fzr.strategy_id == '2'):
+        '''BT_dup_Sort_2'''
+        inputs=sort_strategy.BT_dup_sort_2(in_dir, fzr)
+        l.info("strategy 2 successfull")
+#         time.sleep(60)
+        
+    elif (fzr.strategy_id == '3'):
+        '''BT_no_dup_Sort_3'''
+        inputs=sort_strategy.BT_nodup_sort_3(in_dir, fzr)
+        l.info("strategy 3 successfull")
+#         time.sleep(60)
+        
+    elif (fzr.strategy_id == '4'):
+        '''BA_Sort_4'''
+        inputs=sort_strategy.BA_sort_4(in_dir, fzr)
+        l.info("strategy 4 successfull")
+#         time.sleep(60)
+        
+    elif (fzr.strategy_id == '5'):
+        '''Min_Max_Sort_5'''
+        inputs=sort_strategy.min_max_sort_5(in_dir, fzr)
+        l.info("strategy 5 successfull")
+#         time.sleep(60)
+        
+    elif (fzr.strategy_id == '6'):
+        '''Short_first_Sort_6'''
+        inputs=sort_strategy.short_first_sort_6(in_dir, fzr)
+        l.info("strategy 6 successfull")
+#         time.sleep(60)
+        
+    elif (fzr.strategy_id == '7'):
+        '''Short_by_hamming_7'''
+        inputs=sort_strategy.hamming_sort_7(in_dir, fzr)
+        l.info("strategy 7 successfull")
+#         time.sleep(60)
+        
     else:
-        ##get the inputs in turns
-        inputs = filter(lambda d: not d.startswith('.'), os.listdir(in_dir))
+        l.error("the strategy_id is not right")
     
     # filter inputs which have already been sent to driller
     inputs = input_filter(os.path.join(fzr.out_dir, "fuzzer-master"), inputs) # 删除已经跟踪的
-
+    #------------------------------------------------------------------------
+    
+    
     # submit a driller job for each item in the queue  
     for input_file in inputs: 
         if fzr.timed_out():
@@ -151,7 +202,8 @@ def request_drilling(fzr):
         input_data_path = os.path.join(in_dir, input_file) #这里即使input_file是绝对路径也没有关系
         input_data = open(input_data_path, "rb").read()  # 
         # d_jobs.append(drill.delay(fzr.binary_id, input_data, bitmap_hash, get_fuzzer_id(input_data_path)))
-        d_jobs.append(drill(
+        d_jobs.append(
+                drill(
                 fzr.binary_path,
                 input_data, 
                 input_data_path, 
@@ -201,12 +253,18 @@ def clean_redis(fzr):
 
     # delete the fuzz bitmaps
     redis_inst.delete("%s-bitmaps" % fzr.binary_id)
+    
+    # delete all symmap
+    redis_inst.delete("%s-symmap" % fzr.binary_id)
 
 
 
 @app.task  
-def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sorted):
-#     return
+def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sorted,strategy_id):
+    '''
+    @param strategy_id: the id of strategy, 0,1,2,3,4,5,6,7 
+    '''
+    #     return
     binary=os.path.basename(binary_path)
     l.info("beginning to fuzz \"%s\"", binary)
     seeds=[]
@@ -217,16 +275,6 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sor
             seeds.append(f.read())
             f.close()
     ##end--------------------------------------------------------
-    
-    #
-    # look for a pcap
-#     pcap_path = os.path.join(config.PCAP_DIR, "%s.pcap" % binary)
-#     if os.path.isfile(pcap_path):
-#         l.info("found pcap for binary %s", binary)
-#         seeds = pcap.process(pcap_path)
-#     else:
-#         l.warning("unable to find pcap file, will seed fuzzer with the default")
-
     
     # TODO enable dictionary creation, this may require fixing parts of the fuzzer module
     #fzr = fuzzer.Fuzzer(binary_path, config.FUZZER_WORK_DIR, config.FUZZER_INSTANCES, seeds=seeds, create_dictionary=True)
@@ -242,7 +290,8 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sor
                         afl_input_para=afl_input_para,
                         time_limit=15*60, #second fuzz and symbolic execution time
                         comapre_afl=comapre_afl,
-                        inputs_sorted=inputs_sorted)
+                        strategy_id=strategy_id
+                        )
     
     early_crash = False
     try:

@@ -5,7 +5,7 @@ import stat
 
 srt_dir="/home/xiaosatianyu/Desktop/driller-desk/binary-cgc"
 dst_dir="/home/xiaosatianyu/Desktop/driller-desk/binary-cgc"
-all_str=['#1','#2','#3','#4']
+all_str=['#0','#1','#2','#3','#4','#5','#6','#7']
 pros=os.listdir(srt_dir)
 pros.sort()
 for pro in pros: 

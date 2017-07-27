@@ -16,6 +16,7 @@ from itertools import islice, izip
 import hashlib
 
 import config #pylint:disable=relative-import
+from sort_strategy import *
 
 class DrillerEnvironmentError(Exception):
     pass
@@ -28,7 +29,7 @@ class Driller(object):
     Driller object, symbolically follows an input looking for new state transitions
     '''
 
-    def __init__(self, binary, input,input_data_path, fuzz_bitmap = "\xff" * 65535, tag=None, redis=None, hooks=None, argv=None,
+    def __init__(self, binary, input, input_data_path, fuzz_bitmap = "\xff" * 131072, tag=None, redis=None, hooks=None, argv=None,
                  add_fs=None,add_env=None,add_exclude_sim_pro={},time_limit_for_pro=None,sy_ex_time_limit=None): #pylint:disable=redefined-builtin
         '''
         :param binary: the binary to be traced
@@ -57,8 +58,8 @@ class Driller(object):
         self.add_fs=add_fs
         self.add_env=add_env
         self.add_exclude_sim_pro=add_exclude_sim_pro
-        self.time_limit_for_pro=time_limit_for_pro
-        self.sy_ex_time_limit=sy_ex_time_limit
+        self.time_limit_for_pro =time_limit_for_pro
+        self.sy_ex_time_limit   =sy_ex_time_limit
         self.start_time=time.time() # the start time of this drilling
         
         self.base = os.path.join(os.path.dirname(__file__), "..") #本模块所在目录的上一级, 即driller部分内
@@ -67,8 +68,8 @@ class Driller(object):
         self._hooks = {} if hooks is None else hooks
 
         # set of encountered basic block transition  
-        self._encounters = set()  #记录了测试用例的基本块跳转关系, 这个和bitmap好像是一样的吧?
-
+        self._encounters = set()  #记录了测试用例的基本块跳转关系, 这个和bitmap好像是一样的吧? 元组值　每个元素是一个dict,表示跳跃
+        
         # start time, set by drill method
         self.start_time       = time.time()
 
@@ -82,7 +83,7 @@ class Driller(object):
         l.info("[%s] drilling started on %s", self.identifier, time.ctime(self.start_time))
 
         self.fuzz_bitmap_size = len(self.fuzz_bitmap) # 和AFL中的这个数组大小一样,这里不一定是65536个字节
-
+        
         # setup directories for the driller and perform sanity checks on the directory structure here
         if not self._sane(): #确定目标的可执行,读取执行权限
             l.error("[%s] environment or parameters are unfit for a driller run", self.identifier)
@@ -162,18 +163,24 @@ class Driller(object):
         self._set_simproc_limits(t) #设置了一些libc库的上限
         
         # update encounters with known state transitions
-        # t.trace是基本块的一个有序列表
-        # islice(iterable, start, stop[, step])  islice(t.trace, 1, None)对一个list进行筛选, 去掉第一个基本块, stop是不达到的
-        # izip可以生成两个迭代器之间的关系,生成dict形式的元素, izip的结果还是保持有序性的
-        # 这样生成基本块之间的跳跃
-#         for item in izip(t.trace, islice(t.trace, 1, None)):  
-#             print item #by yyy
-        #update后没有了有序性, 因为set是一个有序集合, 有排列顺序的
-        self._encounters.update(izip(t.trace, islice(t.trace, 1, None))) #izip 把不同的迭代器元素聚合到一个迭代器
-#         for item in self._encounters:  
-#             print item #by yyy
-
-        l.debug("drilling into %r", self.input)
+        # islice(iterable, start, stop[, step]) ; islice(t.trace, 1, None)对一个list进行筛选, 去掉第一个基本块, stop是不达到的
+        # izip可以生成两个迭代器之间的关系,生成dict形式的元素, izip的结果还是保持有序性的,多余的长度自动忽略
+        #update后没有了有序性, 因为set是一个有序集合, 有固定排列顺序的
+        self._encounters.update(izip(t.trace, islice(t.trace, 1, None))) #izip 把不同的迭代器元素聚合到一个迭代器 islice返回一个迭代器
+        #---------------------------------------------------------------------------------------
+        ##记录符号执行过的地址到 数据库的self.binary+'-symmap'
+        #sym_map=[]
+        for  addrs in self._encounters:
+            prev_loc = addrs[0] #上一个基本块的地址
+            cur_loc = addrs[1] #当前基本块的地址
+            self.add_to_sym_map(prev_loc,cur_loc) 
+            #sym_map.append( self.add_to_sym_map(prev_loc,cur_loc) )
+        #sym_map.sort()
+        #测试符号执行轨迹的有用性
+        #BA_sort_4(None,None) 
+        #-----------------------------------------------------------------------------------------
+         
+        l.debug("drilling into %r", self.input) 
         l.debug("input is %r", self.input)
         l.info("drilling into %r",self.tag)
         
@@ -183,7 +190,7 @@ class Driller(object):
         branches = t.next_branch() # tracer.Tracer 下的函数, branches是 PathGroup类  get some missed state; 在这里 沿着原本的路径有一个active,沿着另一个有一个missed;即上一个地址处有一个分叉
         while len(branches.active) > 0 and t.bb_cnt < len(t.trace):  # Bool
             if  self.whole_driller_timed_out(): #the time limitation for this input
-                l.info("driller time out ")
+                l.info("next_branch time out ")
                 break
             # check here to see if a crash has been found
             if self.redis and self.redis.sismember(self.identifier + "-finished", True):  #这里的crash由谁保存的?和AFL的crash冲突吗
@@ -199,23 +206,24 @@ class Driller(object):
                     cur_loc = path.addr #当前基本块的地址
                     cur_loc = (cur_loc >> 4) ^ (cur_loc << 8)
                     cur_loc &= self.fuzz_bitmap_size - 1
-                    #表示是否击中旧的基本块
-                    hit = bool(ord(self.fuzz_bitmap[cur_loc ^ prev_loc]) ^ 0xff)  #ord返回ascii码, 判断对应的基本块是否被afl发现了? true表示被发现的
+                    #hit为0表示，AFL没有执行过这块元组关系； hit为true，表示afl处理过这块元组关系
+                    hit = bool(ord(self.fuzz_bitmap[cur_loc ^ prev_loc]) ^ 0xff)  #ord返回ascii码, AFL的fuzz_bitmap中0xff表示没有对应元组关系，默认0xff，表示没有，为0 表示出现过对应的元组关系
                     transition = (prev_addr, path.addr)
                     l.info("found %x -> %x transition", transition[0], transition[1])
+                    #hit 表示AFL是否执行过这个基本块,0表示没有,1表示有
+                    #self._has_encountered(transition) 表示angr是否执行过这个基本块, true表示有,false表示没有
+                    #self._has_false(path) 表示这个基本块是否可以执行
                     if not hit and not self._has_encountered(transition) and not self._has_false(path):
                         t.remove_preconstraints(path)  # 这个怎么去除预约束?
                         if path.state.satisfiable(): #表示约束可以满足吧
                             # a completely new state transitions, let's try to accelerate AFL
                             # by finding  a number of deeper inputs
                             l.info("found a completely new transition, exploring to some extent")#再前进一定的步数
-                            #发现的路径信息会不会记录到fuzz_bitmap中区
+                            
                             w = self._writeout(prev_addr, path, len(t.argv)) #输出新测试用例到redis数据库,w是一个tuple,一个是信息,第二个是生成的内容
                             if w is not None:
-                                #pass
                                 yield w  # 生成器, 返回的是一个tuple, 有关于新的测试用例
                             for pro in self._symbolic_explorer_stub(path): #找到一条新的路径之后,继续纯符号执行一定的步数至再产生累计1024个state
-                                #pass
                                 yield pro # 生成器
                         else:
                             l.debug("path to %#x was not satisfiable", transition[1])
@@ -237,7 +245,8 @@ class Driller(object):
             #except AttributeError: #debug
             except IndexError: #这个是哪里来的error
                 branches.active = [ ] #清空 表示当前这条真实路径跑不下去了,开始下一个测试用例
-        pass        
+        pass 
+    
 ### EXPLORER
     def _symbolic_explorer_stub(self, path):
         # create a new path group and step it forward up to 1024 accumulated active paths or steps
@@ -331,11 +340,11 @@ class Driller(object):
 #-----------原始的  , 发现新路径到终点,再生成    
         #计时
         while len(pg.active) and accumulated < 5000: #修改这里的逻辑,每次新发现一个state,就生成
-            if  self.single_sy_ex_timed_out(start_time) or self.whole_driller_timed_out(): ##单次的时间上限,或者总时间到了
-                if self.single_sy_ex_timed_out(start_time):
-                    l.info("symbolic time out ")
-                else:
-                    l.info("driller time out ")   
+            if  self.single_sy_ex_timed_out(start_time):
+                l.info("single_sy_ex_timed_out time out ")
+                break
+            if self.whole_driller_timed_out(): ##单次的时间上限,或者总时间到了
+                l.info("whole_driller_timed_out time out ")   
                 break
             pg.step() #这个是在线符号执行
             steps += 1
@@ -348,22 +357,19 @@ class Driller(object):
   
         pg.stash(from_stash='deadended', to_stash='active') #为什么这么移动? deadended是结束路, 是因为预约束吗
         for dumpable in pg.active: #dumpable是 path 类型的
-            if  self.single_sy_ex_timed_out(start_time) or self.whole_driller_timed_out(): ##单次的时间上限,或者总时间到了
-                if self.single_sy_ex_timed_out(start_time):
-                    l.info("symbolic time out ")
-                else:
-                    l.info("driller time out ")   
+            if  self.single_sy_ex_timed_out(start_time):
+                l.info("single_sy_ex_timed_out time out ")
                 break
-            
+            if self.whole_driller_timed_out(): ##单次的时间上限,或者总时间到了
+                l.info("whole_driller_timed_out time out ")   
+                break
             try:
-                if dumpable.state.satisfiable(): #如果是可满足的
+                if  dumpable.state.satisfiable(): #如果是可满足的
                     w = self._writeout(dumpable.addr_trace[-1], dumpable,1) 
                     if w is not None:
-                        #pass
                         yield w
             except IndexError: # if the path we're trying to dump wasn't actually satisfiable
                 pass
-
 
 ### UTILS
 
@@ -412,7 +418,7 @@ class Driller(object):
         :param next_addr: the destination address in the state transition
         :return: boolean describing whether or not the input generated is redundant
         '''
-        key = '%x,%x,%x\n' % (length, prev_addr, next_addr) #这种key无法代表这一条路径
+        key = '%x,%x,%x\n' % (length, prev_addr, next_addr) #这种key无法代表这一条路径??
 
         if self.redis:
             return self.redis.sismember(self.identifier + '-catalogue', key) #这个返回值,判断对象是否存在
@@ -446,17 +452,17 @@ class Driller(object):
         path.state.posix.files[fd].seek(t_pos) #回到文件偏移量
         key = (len(generated), prev_addr, path.addr)
         print ( "新发现 0X%x -> 0x%x" %( prev_addr, path.addr ))
-
+         
         # checks here to see if the generation is worth writing to disk
         # if we generate too many inputs which are not really different we'll seriously slow down AFL
         
-        if self._in_catalogue(*key):  #加 *号表示  这个表示方法不对
-        #if False:  #加 *号表示  这个表示方法不对
-            #pass # 不然会影响后面的测试用例
+        if self._in_catalogue(*key):  #加 *号表示 一堆变量
             return
         else:
-            self._encounters.add((prev_addr, path.addr))
+            self._encounters.add((prev_addr, path.addr)) #添加到了self._encounters 中
             self._add_to_catalogue(*key)
+            #添加到整个符号执行的轨迹中
+            self.add_to_sym_map(prev_addr,path.addr)
 
         l.info("[%s] dumping input for %x -> %x", self.identifier, prev_addr, path.addr)
 
@@ -501,3 +507,16 @@ class Driller(object):
         if self.sy_ex_time_limit is None:
             return False  # 默认是false
         return time.time() - this_start_time > self.sy_ex_time_limit
+    
+    #将元组关系加入到符号执行轨迹中,在数据库中
+    def add_to_sym_map(self, prev_loc, cur_loc):
+        prev_loc = (prev_loc >> 4) ^ (prev_loc << 8)
+        prev_loc &= self.fuzz_bitmap_size - 1
+        prev_loc = prev_loc >> 1
+        # 当前基本块的地址
+        cur_loc = (cur_loc >> 4) ^ (cur_loc << 8)
+        cur_loc &= self.fuzz_bitmap_size - 1
+        # 记录符号执行的轨迹
+        self.redis.sadd(self.identifier+'-symmap', str(cur_loc ^ prev_loc)) #若已经存在，则被忽略
+        aa=redis_inst.smembers(self.identifier+'-symmap')
+        return cur_loc ^ prev_loc #返回轨迹点

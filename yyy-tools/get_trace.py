@@ -48,7 +48,7 @@ def dynamic_trace(tracer_qemu,input_path,target_binary,output_dir,test_from_dir,
                 f=open(input_path, 'rb')
                 input=f.read()
                 f.close()
-                _,_= p.communicate("1\n2")#读取测试用例,输入 加'\n'后可以多次
+                _,_= p.communicate(input)#读取测试用例,输入 加'\n'后可以多次
                 
             ret = p.wait() #等待返回结果
             
@@ -203,7 +203,7 @@ def write_each_trace(output_dir,input_name, test_trace, test_trace_set,from_dir)
     
     #十进制 轨迹
     with open(filename, 'a') as ofp:
-        #for v in test_trace_set:
+#         for v in test_trace_set: #去重
         for v in test_trace: #保持了有序性
             a=v.split(']')[0]
             b=v.split(']')[1]
@@ -214,7 +214,7 @@ def write_each_trace(output_dir,input_name, test_trace, test_trace_set,from_dir)
     
     #十六进制 轨迹
     with open(filename+"hex", 'a') as ofp:
-        #for v in test_trace_set:
+#         for v in test_trace_set: #去重
         for v in test_trace: #保持了有序性
             a=v.split(']')[0]
             b=v.split(']')[1]
@@ -230,19 +230,24 @@ def start_get_trace(target_binary):
     #target_binary = "/home/xiaosatianyu/Desktop/afl-yyy/target/brancher" #这个可以读取 bmp2tiff claw32
     
     #配置对应的qemu
-    qemu_dir="/home/xiaosatianyu/workspace/git/driller-yyy/shellphish-qemu/shellphish_qemu/bin"
-    #p = angr.Project(target_binary)
-    #platform = p.arch.qemu_name
-    platform = 'cgc'
-    if platform == 'i386':
-        tracer_qemu = os.path.join(qemu_dir, "shellphish-qemu-linux-i386")
-    elif platform == 'x86_64': 
-        tracer_qemu = os.path.join(qemu_dir, "shellphish-qemu-linux-x86_64")
-    elif platform == 'cgc': 
-        tracer_qemu = os.path.join(qemu_dir, "shellphish-qemu-cgc-tracer")
-    else:
-        print "no qemu\n"
-        exit(1)     
+#     qemu_dir="/home/xiaosatianyu/workspace/git/driller-yyy/shellphish-qemu/shellphish_qemu/bin" #来自于tracer
+#     #p = angr.Project(target_binary)
+#     #platform = p.arch.qemu_name
+#     platform = 'cgc'
+#     if platform == 'i386':
+#         tracer_qemu = os.path.join(qemu_dir, "shellphish-qemu-linux-i386")
+#     elif platform == 'x86_64': 
+#         tracer_qemu = os.path.join(qemu_dir, "shellphish-qemu-linux-x86_64")
+#     elif platform == 'cgc': 
+#         tracer_qemu = os.path.join(qemu_dir, "shellphish-qemu-cgc-tracer")
+#     else:
+#         print "no qemu\n"
+#         exit(1)     
+        
+    #配置afl-cgc的qemu
+    #afl-cgc下的qemu
+    qemu_dir_cgc="/home/xiaosatianyu/workspace/git/driller-yyy/shellphish-afl/bin/afl-cgc/tracers/i386"
+    tracer_qemu = os.path.join(qemu_dir_cgc, "afl-qemu-trace")
     
     #配置测试用例输入目录,这个是当个afl引擎的情况
     #input_from ="file" 
@@ -250,9 +255,9 @@ def start_get_trace(target_binary):
     
     afl_dir="/tmp/driller/file/sync/fuzzer-master"
     #test_case_dir = os.path.join(afl_dir, "queue")  # AFL生成测试用例的目录
-    #test_case_dir = "/home/xiaosatianyu/Desktop/driller/seed"
+    test_case_dir = "/home/xiaosatianyu/Desktop/driller-desk/seed"
     #test_case_dir = "/tmp/driller/YAN01_00016/driller"
-    test_case_dir=os.path.join("/tmp/driller",os.path.basename(target_binary),"driller/queue")
+#     test_case_dir=os.path.join("/tmp/driller",os.path.basename(target_binary),"driller/queue")
     
     crash_dir = os.path.join(afl_dir, "crashes")  # AFL生成测试用例的目录
     
@@ -319,7 +324,7 @@ def start_get_trace(target_binary):
     
 if __name__ == "__main__":
     print "start!\n"
-    binaries_dir="/home/xiaosatianyu/Desktop/driller/生成数量多的cgc"
+    binaries_dir="/home/xiaosatianyu/Desktop/driller-desk/binary-cgc-test"
     target_pros=os.listdir(binaries_dir)
     target_pros.sort()
     if os.path.exists("/tmp/traces"):

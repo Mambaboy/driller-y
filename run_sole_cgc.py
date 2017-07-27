@@ -46,13 +46,6 @@ def start(binary,afl_engine):
         if not os.access(pathed_binary, os.X_OK):
             continue
         
-        ##annotation by yyy------------------------
-#         identifier = binary[:binary.rindex("_")]  #
-#         # remove IPC binaries from largescale testing ;
-#         if (identifier + "_02") not in binaries:
-#             jobs.append(binary) #
-        ##end  ----------------------------------
-        
         identifier = binary  
         jobs.append(pathed_binary)  #
         
@@ -61,18 +54,6 @@ def start(binary,afl_engine):
 
     # send all the binaries to the celery queue 
     l.info("%d binaries found", len(jobs))
-
-    filter_t = set()  
-    # yyy
-#     try:
-#         pwned = open("pwned").read()  
-#         for pwn in pwned.split("\n")[:-1]:
-#             filter_t.add(pwn)
-#         l.info("already pwned %d", len(filter_t))
-#     except IOError:
-#         pass
-    # yyy
-    jobs = filter(lambda j: j not in filter_t, jobs) #
 
     l.info("going to work on %d", len(jobs))
 
