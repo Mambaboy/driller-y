@@ -20,6 +20,7 @@ import signal
 import sys
 import gc
 from plumbum.cli.switches import switch
+from _ast import If
 
 l = logging.getLogger("driller.tasks")
 #l.setLevel(logging.DEBUG)
@@ -42,18 +43,20 @@ def get_fuzzer_id(input_data_path): #get testcase-id in the queue catalog
         return "None"
     fuzzer_name = abs_path.split("sync/")[-1].split("/")[0]
     input_id = abs_path.split("id:")[-1].split(",")[0]
-    return fuzzer_name + ",src:" + input_id
+    return fuzzer_name + ",src:" + input_id  # 
 
 @app.task
 def drill(binary_path, input_data, input_data_path, bitmap_hash, tag, input_from, afl_input_para,time_limit_for_pro):
     '''
-    :@param time_limit_for_pro:针对每个目标程序的执行时间
+    @param time_limit_for_pro:针对每个目标程序的执行时间
+    @param tag: 后传给listern的一个标记,在新测试用例生成是加的名字
+    @param time_limit_for_pro:  每个driller的时间
     '''
     binary=os.path.basename(binary_path)
     redis_inst = redis.Redis(connection_pool=redis_pool) #
     fuzz_bitmap = redis_inst.hget(binary + '-bitmaps', bitmap_hash)  #get the bitmap   ##这是一个长传的字符,131072个字符.可以用[]读取,但是不能赋值
     if fuzz_bitmap is None:
-        fuzz_bitmap="\xff" * 131072 #debug用
+        fuzz_bitmap="\xff" * 131072 #debug用,或者是纯符号执行是用
     #--------------------------------------------------------------   
     if input_from=="stdin":
         yargv=None
@@ -72,7 +75,7 @@ def drill(binary_path, input_data, input_data_path, bitmap_hash, tag, input_from
         add_fs = {
         input_data_path: input_Simfile
         } 
-        add_exclude_sim_pro=["stat"]
+        add_exclude_sim_pro=[]
     else:
         l.error("the input argv in driller is error")
     #add_env={"HOME": os.environ["HOME"]}   
@@ -84,8 +87,6 @@ def drill(binary_path, input_data, input_data_path, bitmap_hash, tag, input_from
                       add_fs=add_fs,add_env=add_env,add_exclude_sim_pro=add_exclude_sim_pro,
                       time_limit_for_pro=time_limit_for_pro, sy_ex_time_limit=10*60
                       ) 
-    #tag fuzzer-master,src:000108
-    
     try:
         return driller.drill() #
     #except AttributeError as e:  #debug
@@ -96,19 +97,31 @@ def drill(binary_path, input_data, input_data_path, bitmap_hash, tag, input_from
 def input_filter(fuzzer_dir, inputs): #
 
     traced_cache = os.path.join(fuzzer_dir, "traced")
-
     traced_inputs = set()
     if os.path.isfile(traced_cache):
         with open(traced_cache, 'rb') as f:
             traced_inputs = set(f.read().split('\n')) 
-
     new_inputs = filter(lambda pro: pro not in traced_inputs, inputs)
 
     with open(traced_cache, 'ab') as f:
         for new_input in new_inputs:
             f.write("%s\n" % new_input)
-
     return new_inputs
+
+def has_drilled_and_add(fuzzer_dir, input_file): #
+    traced_cache = os.path.join(fuzzer_dir, "traced")
+    traced_inputs = set()
+    if os.path.isfile(traced_cache):
+        with open(traced_cache, 'rb') as f:
+            traced_inputs = set(f.read().split('\n')) 
+            
+    if input_file in traced_inputs:
+        return True #has drilled
+    else:
+        #add to the traced_inputs
+        with open(traced_cache, 'ab') as f:
+            f.write("%s\n" % input_file)
+        return False #not driller and add
 
 def request_drilling(fzr):  
     '''
@@ -123,17 +136,17 @@ def request_drilling(fzr):
     
     ##to assure the file is exit
     l.info("waiting for fuzz_bitmap")
-#     while not os.path.exists(bitmap_f):
-#         pass
-#     ##end--------------------------------------------------------
-#     l.info("fuzz_bitmap is generated, go on")
-#           
-#     bitmap_data = open(bitmap_f, "rb").read() #bitmap
-#     bitmap_hash = hashlib.sha256(bitmap_data).hexdigest() #
-#     redis_inst = redis.Redis(connection_pool=redis_pool) #
-#     redis_inst.hset(fzr.binary_id + '-bitmaps', bitmap_hash, bitmap_data) # 构建hash对
+    while not os.path.exists(bitmap_f):
+        pass
+    ##end--------------------------------------------------------
+    l.info("fuzz_bitmap is generated, go on")
+               
+    bitmap_data = open(bitmap_f, "rb").read() #bitmap
+    bitmap_hash = hashlib.sha256(bitmap_data).hexdigest() #
+    redis_inst = redis.Redis(connection_pool=redis_pool) #
+    redis_inst.hset(fzr.binary_id + '-bitmaps', bitmap_hash, bitmap_data) # 构建hash对
     
-    bitmap_hash=None # for debug
+#     bitmap_hash=None # for debug
     #------------------------------------------------------------------------
 
     ##get inputs  according the strategy_id
@@ -171,6 +184,8 @@ def request_drilling(fzr):
     elif (fzr.strategy_id == '5'):
         '''Min_Max_Sort_5'''
         inputs=sort_strategy.min_max_sort_5(in_dir, fzr)
+        #这里再想一个法子,第一个和逆序
+        
         l.info("strategy 5 successfull")
 #         time.sleep(60)
         
@@ -190,15 +205,19 @@ def request_drilling(fzr):
         l.error("the strategy_id is not right")
     
     # filter inputs which have already been sent to driller
-    inputs = input_filter(os.path.join(fzr.out_dir, "fuzzer-master"), inputs) # 删除已经跟踪的
+#     inputs = input_filter(os.path.join(fzr.out_dir, "fuzzer-master"), inputs) # 删除已经跟踪的,这里会把inputs中的都记录下
     #------------------------------------------------------------------------
     
-    
     # submit a driller job for each item in the queue  
+    num=0
     for input_file in inputs: 
         if fzr.timed_out():
             l.info("fuzzzer time out ")
             break #如果fuzzer停了,符号执行也停
+        # filter inputs which have already been sent to driller and add the undrilled into traced_cache
+        if  has_drilled_and_add(os.path.join(fzr.out_dir, "fuzzer-master"), input_file):
+            continue
+        num+=1 #每跑一个都加1
         input_data_path = os.path.join(in_dir, input_file) #这里即使input_file是绝对路径也没有关系
         input_data = open(input_data_path, "rb").read()  # 
         # d_jobs.append(drill.delay(fzr.binary_id, input_data, bitmap_hash, get_fuzzer_id(input_data_path)))
@@ -208,11 +227,14 @@ def request_drilling(fzr):
                 input_data, 
                 input_data_path, 
                 bitmap_hash, 
-                get_fuzzer_id(input_data_path), 
+                get_fuzzer_id(input_data_path), #tag
                 input_from=fzr.input_from, 
                 afl_input_para=fzr.afl_input_para,
                 time_limit_for_pro=fzr.time_limit)
                 )  # 
+        #除了 不排序和随机排序的,其他的每测试一个测试用例后重新排序
+        if num >0 and fzr.strategy_id !='0' and fzr.strategy_id !='1':
+            break
         
     return d_jobs #当前的测试用例跑完了,退出看看time_out,没有的
 
@@ -266,10 +288,15 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sor
     '''
     #     return
     binary=os.path.basename(binary_path)
+    #如果tmp中,就忽略
+    if os.path.exists( os.path.join("/tmp/driller",binary)  ):
+        l.info("%s has been in tmp, start the next" % binary)
+        return
+    
     l.info("beginning to fuzz \"%s\"", binary)
     seeds=[]
-    seed_dir = config.SEED
-    for seed in os.listdir(seed_dir):  # 
+    seed_dir = config.SEED 
+    for seed in os.listdir(seed_dir):  # 底下最好不要有其他目录
         # copy seed to input catalory
         with open(os.path.join(seed_dir, seed), 'rb') as f:  
             seeds.append(f.read())
@@ -288,7 +315,7 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sor
                         afl_engine=afl_engine,
                         input_from=input_from,
                         afl_input_para=afl_input_para,
-                        time_limit=15*60, #second fuzz and symbolic execution time
+                        time_limit=18*60, #second fuzz and symbolic execution time
                         comapre_afl=comapre_afl,
                         strategy_id=strategy_id
                         )
@@ -324,6 +351,8 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sor
         
     except Exception as e:
 #     except fuzzer.EarlyCrash:
+        fzr.kill()
+        gc.collect()
         l.info("binary crashed on dummy testcase, moving on...")
         l.info("binary Exception %s",e)
         early_crash = True
@@ -354,7 +383,10 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sor
 
     # TODO end drilling jobs working on the binary
 
-    return fzr.found_crash() or early_crash
+
+    
+
+    #return fzr.found_crash() or early_crash
 
 
 

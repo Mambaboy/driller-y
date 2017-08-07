@@ -60,7 +60,7 @@ def BT_dup_sort_2(in_dir, fzr):
     if os.path.isdir(fzr.out_dir):
             record_path = os.path.join(fzr.out_dir, "fuzzer-master", "afl_to_angr") 
             if os.path.isfile(record_path):
-                with open(record_path, "rb") as f:
+                with open(record_path, "r") as f:
                     content = f.read()
                     lines = content.split("\n")[1:-1]
                     for line in lines:
@@ -72,7 +72,7 @@ def BT_dup_sort_2(in_dir, fzr):
                 fzr.strategy_id = '0'                
     
     ##加载剩下的测试用例
-#     inputs.extend(filter(lambda d: not d.startswith('.') and os.path.basename(d) not in inputs, os.listdir(in_dir)));
+    inputs.extend(filter(lambda d: not d.startswith('.') and os.path.basename(d) not in inputs, os.listdir(in_dir)));
     return inputs
 
 #end 2 BT_dup_Sort_2------------------------------------------------------------------------------------
@@ -86,7 +86,7 @@ def BT_nodup_sort_3(in_dir, fzr):
     if os.path.isdir(fzr.out_dir):
             record_path = os.path.join(fzr.out_dir, "fuzzer-master", "afl_to_angr") 
             if os.path.isfile(record_path):
-                with open(record_path, "rb") as f:
+                with open(record_path, "r") as f:
                     content = f.read()
                     lines = content.split("\n")[1:-1]
                     for line in lines:
@@ -98,7 +98,7 @@ def BT_nodup_sort_3(in_dir, fzr):
                 fzr.strategy_id = '0'                
 
     ##加载剩下的测试用例
-#     inputs.extend(filter(lambda d: not d.startswith('.') and os.path.basename(d) not in inputs, os.listdir(in_dir)));
+    inputs.extend(filter(lambda d: not d.startswith('.') and os.path.basename(d) not in inputs, os.listdir(in_dir)));
     return inputs
 #end 3 BT_no_dup_Sort_3--------------------------------------------------------------------------------------
 
@@ -115,13 +115,12 @@ def BA_sort_4(in_dir, fzr):
 
 #     trace_mini_path=os.path.join(out_dir,"fuzzer-master","queue_trace_mini")
     trace_mini_path=os.path.join(fzr.out_dir,"fuzzer-master","queue_trace_mini")
-    
     trace_mini_inputs=os.listdir(trace_mini_path)
     
 #     input_filter(os.path.join(out_dir, "fuzzer-master"),trace_mini_inputs)
-    input_filter(os.path.join(fzr.out_dir, "fuzzer-master"),trace_mini_inputs)
     
-    #还要过滤掉已经记录的程序,避免再打开关闭文件
+    #还要过滤掉已经记录的程序,避免再打开关闭文件,多次打开会浪费时间
+    trace_mini_inputs=input_filter(os.path.join(fzr.out_dir, "fuzzer-master"),trace_mini_inputs)
     trace_mini_inputs.sort()
     
     #得到符号执行的轨迹
@@ -156,16 +155,19 @@ def BA_sort_4(in_dir, fzr):
                     distance+=1
                 else:
                     pass #for debug  
-                    distance+=0  
         record.append((trace_mini,distance))
         
     #根据与符号执行轨迹距离进行排序距离排序    
     sorted_record = sorted(record, key=lambda testcase : testcase[1], reverse=True) #key这里指定一个函数，即读取每个元素的某个域的值
     
-    ##输出测试用例的排序
+#     ##输出测试用例的排序
     inputs=[]
     for test_record in sorted_record:
         inputs.append(test_record[0])
+        
+    ##加载剩下的测试用例
+    inputs.extend(filter(lambda d: not d.startswith('.') and os.path.basename(d) not in inputs, os.listdir(in_dir)));
+        
     return inputs
     
 #end 4 BA_Sort_4--------------------------------------------------------------------------------------
@@ -184,6 +186,40 @@ def min_max_sort_5(in_dir, fzr):
                 with open(record_path, "rb") as f:
                     content = f.read()
                     lines = content.split("\n")[1:-1]
+                    
+#                     length=len(lines)
+#                     for index in xrange(length/2+1):
+#                         #line1是前的,line2是后的,前加一个,后加一个
+#                         line1=lines[index].split(";")
+#                         line2=lines[length-index-1].split(";")
+#                         
+#                         line1[0]=os.path.basename(line1[0].strip())
+#                         line1[1]=os.path.basename(line1[1].strip())
+#                         
+#                         line2[0]=os.path.basename(line2[0].strip())
+#                         line2[0]=os.path.basename(line2[0].strip())
+#                         
+#                         if  line1[0].strip() not in inputs and not line1[0] == "":
+#                             inputs.append(line1[0].strip())
+#                         if  line1[1].strip() not in inputs and not line1[1] == "":
+#                             inputs.append(line1[1].strip())
+#                             
+#                         if  line2[0].strip() not in inputs and not line2[0] == "":
+#                             inputs.append(line2[0].strip())
+#                         if  line2[1].strip() not in inputs and not line2[1] == "":
+#                             inputs.append(line2[1].strip()) 
+                            
+                    #把最后一个提前加入到队列
+#                     last_line=lines[-1]
+#                     last_data=last_line.split(";")
+#                     last_data[0] = os.path.basename(last_data[0].strip())
+#                     last_data[1] = os.path.basename(last_data[1].strip())
+#                     if last_data[0].strip() not in inputs and not last_data[0] == "":
+#                             inputs.append(last_data[0].strip())
+#                     if last_data[1].strip() not in inputs and not last_data[1] == "":    
+#                             inputs.append(last_data[1].strip())
+                    
+                    #剩下的按照顺序加入
                     for line in lines:
                         inputs_line = line.split(";")
                         inputs_line[0] = os.path.basename(inputs_line[0].strip())
@@ -196,7 +232,8 @@ def min_max_sort_5(in_dir, fzr):
                 fzr.inputs_sorted = False                
     
     ##加载剩下的测试用例
-    #inputs.extend(filter(lambda d: not d.startswith('.') and os.path.basename(d) not in inputs, os.listdir(in_dir)));
+    inputs.extend(filter(lambda d: not d.startswith('.') and os.path.basename(d) not in inputs, os.listdir(in_dir)));
+    
     
     return inputs
 #end 5 Min_Max_Sort_5--------------------------------------------------------------------------------------
@@ -224,7 +261,7 @@ def short_first_sort_6(in_dir, fzr):
                 fzr.strategy_id = '0'                
                 
     ##加载剩下的测试用例
-#     inputs.extend(filter(lambda d: not d.startswith('.') and os.path.basename(d) not in inputs, os.listdir(in_dir)));
+    inputs.extend(filter(lambda d: not d.startswith('.') and os.path.basename(d) not in inputs, os.listdir(in_dir)));
     
     return inputs
 #end 5 Short_first_Sort_6--------------------------------------------------------------------------------------
@@ -253,7 +290,7 @@ def hamming_sort_7(in_dir, fzr):
             else:
                 fzr.inputs_sorted = False                
     ##加载剩下的测试用例
-#     inputs.extend(filter(lambda d: not d.startswith('.') and os.path.basename(d) not in inputs, os.listdir(in_dir)));
+    inputs.extend(filter(lambda d: not d.startswith('.') and os.path.basename(d) not in inputs, os.listdir(in_dir)));
     
     return inputs
 #end 7 -------------------------------------------------------------------------------------------------------------

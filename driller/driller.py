@@ -51,7 +51,7 @@ class Driller(object):
         self.input       = input
         self.input_data_path=input_data_path 
         self.fuzz_bitmap = fuzz_bitmap   #AFL bitmap 默认全时\xff
-        self.tag         = tag  # fuzzer-master,src:000108 这样的
+        self.tag         = tag  # fuzzer-master,src:000108 这样的,用于listen中生成测试用例的名称
         self.redis       = redis  #一个redis连接实例
         self.argv = argv or [binary] #带程序和参数的,或者直接不填;默认有程序
         ##yyy add
@@ -67,7 +67,8 @@ class Driller(object):
         # the simprocedures
         self._hooks = {} if hooks is None else hooks
 
-        # set of encountered basic block transition  
+        # set of encountered basic block transition 
+        #记录当前测试用例的轨迹,以及符号执行过程中的轨迹 
         self._encounters = set()  #记录了测试用例的基本块跳转关系, 这个和bitmap好像是一样的吧? 元组值　每个元素是一个dict,表示跳跃
         
         # start time, set by drill method
@@ -159,7 +160,7 @@ class Driller(object):
                           add_fs=self.add_fs, add_env=self.add_env,add_exclude_sim_pro=self.add_exclude_sim_pro) #
         #这个trace是利用qemu跑一遍获得基本块链表,还没有符号执行
         
-        self._set_concretizations(t) #具体化? 得到一些测试用例? 这个还不是很清楚,和unicorn有关
+        self._set_concretizations(t) #具体化? 得到一些测试用例? 这个还不是很清楚,和unicorn有关 
         self._set_simproc_limits(t) #设置了一些libc库的上限
         
         # update encounters with known state transitions
@@ -168,7 +169,7 @@ class Driller(object):
         #update后没有了有序性, 因为set是一个有序集合, 有固定排列顺序的
         self._encounters.update(izip(t.trace, islice(t.trace, 1, None))) #izip 把不同的迭代器元素聚合到一个迭代器 islice返回一个迭代器
         #---------------------------------------------------------------------------------------
-        ##记录符号执行过的地址到 数据库的self.binary+'-symmap'
+        ##记录符号执行过的地址到在线数据库的self.binary+'-symmap',针对当前测试程序全部有效
         #sym_map=[]
         for  addrs in self._encounters:
             prev_loc = addrs[0] #上一个基本块的地址
@@ -180,13 +181,13 @@ class Driller(object):
         #BA_sort_4(None,None) 
         #-----------------------------------------------------------------------------------------
          
-        l.debug("drilling into %r", self.input) 
-        l.debug("input is %r", self.input)
+        #l.debug("drilling into %r", self.input) 
+        #l.debug("input is %r", self.input)
         l.info("drilling into %r",self.tag)
         
         #开始寻找下一个新的测试用例了
         # used for finding the right index in the fuzz_bitmap
-        prev_loc = 0
+        prev_loc = 0   #cgc的缓存要看一看
         branches = t.next_branch() # tracer.Tracer 下的函数, branches是 PathGroup类  get some missed state; 在这里 沿着原本的路径有一个active,沿着另一个有一个missed;即上一个地址处有一个分叉
         while len(branches.active) > 0 and t.bb_cnt < len(t.trace):  # Bool
             if  self.whole_driller_timed_out(): #the time limitation for this input
@@ -214,6 +215,7 @@ class Driller(object):
                     #self._has_encountered(transition) 表示angr是否执行过这个基本块, true表示有,false表示没有
                     #self._has_false(path) 表示这个基本块是否可以执行
                     if not hit and not self._has_encountered(transition) and not self._has_false(path):
+#                         redis_inst.sismember(self.identifier+'-symmap',cur_loc ^ prev_loc) #表示测试其他测试用例时,符号执行过这个元组 调试
                         t.remove_preconstraints(path)  # 这个怎么去除预约束?
                         if path.state.satisfiable(): #表示约束可以满足吧
                             # a completely new state transitions, let's try to accelerate AFL
@@ -229,7 +231,7 @@ class Driller(object):
                             l.debug("path to %#x was not satisfiable", transition[1])
 
                     else:
-                        l.debug("%x -> %x has already been encountered", transition[0], transition[1])
+                        l.debug("%x -> %x has already been encountered,or not feasible", transition[0], transition[1])
 
             try:
                 branches = t.next_branch()  # go on find the next branch 寻找到下一个分叉的两个选项 ,此时bb_cnt的数值延后
@@ -245,7 +247,6 @@ class Driller(object):
             #except AttributeError: #debug
             except IndexError: #这个是哪里来的error
                 branches.active = [ ] #清空 表示当前这条真实路径跑不下去了,开始下一个测试用例
-        pass 
     
 ### EXPLORER
     def _symbolic_explorer_stub(self, path):
@@ -303,7 +304,7 @@ class Driller(object):
 #---------每次发现新的基本块就求解                
 #         old_path_num=len(pg.active)
 #         new_path_num=len(pg.active)#保证还有存活的路径
-#         while new_path_num and accumulated < 10240:  #
+#         while new_path_num and accumulated < 1024:  
 #             pg.step() #这个是在线符号执行 运行这一步之后的pg.active也会更新,是每一个基本块都求解,还是只求解一次呢 在这个扩张的过程中会消失
 #             steps += 1
 #             old_path_num=new_path_num
@@ -319,7 +320,6 @@ class Driller(object):
 #                             w = self._writeout(pg.active[pro].addr_trace[-1], pg.active[pro],len(self.argv))  # SimFile
 #                             if w is not None:
 #                                 yield w
-#                                 #pass
 #                     except IndexError: # if the path we're trying to dump wasn't actually satisfiable
 #                         pass
 #         l.info("[%s] symbolic exploration stopped at %s", self.identifier, time.ctime())
@@ -331,15 +331,13 @@ class Driller(object):
 #                     if dumpable.state.satisfiable(): #如果是可满足的
 #                         w = self._writeout(dumpable.addr_trace[-1], dumpable, len(self.argv)) 
 #                         if w is not None:
-#                             #pass
 #                             yield w
 #                 except IndexError: # if the path we're trying to dump wasn't actually satisfiable
 #                     pass
 
-
 #-----------原始的  , 发现新路径到终点,再生成    
         #计时
-        while len(pg.active) and accumulated < 5000: #修改这里的逻辑,每次新发现一个state,就生成
+        while len(pg.active) and accumulated < 1024: #修改这里的逻辑,每次新发现一个state,就生成
             if  self.single_sy_ex_timed_out(start_time):
                 l.info("single_sy_ex_timed_out time out ")
                 break
@@ -352,17 +350,10 @@ class Driller(object):
             accumulated = steps * (len(pg.active) + len(pg.deadended)) #这里是一种探索方式的上限
             l.info("symbolic exploration %d",accumulated)
             print "%s symbolic exploration accumulated %d,time is %d" % (os.path.basename(self.binary),accumulated, time.time()- start_time)
-            
         l.info("[%s] symbolic exploration stopped at %s second", self.identifier, time.ctime())
   
         pg.stash(from_stash='deadended', to_stash='active') #为什么这么移动? deadended是结束路, 是因为预约束吗
         for dumpable in pg.active: #dumpable是 path 类型的
-            if  self.single_sy_ex_timed_out(start_time):
-                l.info("single_sy_ex_timed_out time out ")
-                break
-            if self.whole_driller_timed_out(): ##单次的时间上限,或者总时间到了
-                l.info("whole_driller_timed_out time out ")   
-                break
             try:
                 if  dumpable.state.satisfiable(): #如果是可满足的
                     w = self._writeout(dumpable.addr_trace[-1], dumpable,1) 
@@ -496,8 +487,8 @@ class Driller(object):
         针对该目标程序的时间上限判断
         '''
         if self.time_limit_for_pro is None:
-            return False  # 默认是false
-        return time.time() - self.start_time > self.time_limit_for_pro
+            return False  # 默认是false,表示不会退出
+        return time.time() - self.start_time > self.time_limit_for_pro #表示要退出了
     
     def single_sy_ex_timed_out(self,this_start_time): 
         '''

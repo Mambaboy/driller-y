@@ -61,13 +61,13 @@ def start(binary,afl_engine,strategy_id):
 
     # send all the binaries to the celery queue 任务调度器
     l.info("%d binaries found", len(jobs))
-
+    
     jobs.sort()
     l.info("going to work on %d", len(jobs))
-    time.sleep(500*60)
+    
     for binary_path in jobs:     #这里是clery下 task模块中的delay函数
         #driller.tasks.fuzz.delay(binary_path,input_from,afl_input_para,afl_engine) #这里的delay是对fuzz这个函数用的 是celery的函数
-        driller.tasks.fuzz(binary_path+'#3', input_from,afl_input_para,afl_engine,comapre_afl=False, inputs_sorted=True,strategy_id=strategy_id)
+        driller.tasks.fuzz(binary_path+'#5', input_from,afl_input_para,afl_engine,comapre_afl=False, inputs_sorted=True,strategy_id=strategy_id)
 
     l.info("this task ends")
   
@@ -84,7 +84,7 @@ def main(argv):
     
     binary=None
     afl_engine="fast"   
-    start(binary,afl_engine,'3')
+    start(binary,afl_engine,'5')
     ## end ---------------------
     
 if __name__ == "__main__":

@@ -64,7 +64,7 @@ def start(binary,afl_engine,strategy_id):
 
     jobs.sort()
     l.info("going to work on %d", len(jobs))
-    time.sleep(1500*60)
+    
     for binary_path in jobs:     #这里是clery下 task模块中的delay函数
         #driller.tasks.fuzz.delay(binary_path,input_from,afl_input_para,afl_engine) #这里的delay是对fuzz这个函数用的 是celery的函数
         driller.tasks.fuzz(binary_path+'#6', input_from,afl_input_para,afl_engine,comapre_afl=False, inputs_sorted=True,strategy_id=strategy_id)

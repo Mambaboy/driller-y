@@ -41,7 +41,7 @@ DEBUG_DIR = None
 ### Fuzzer options
 
 # how often to check for crashes in seconds
-CRASH_CHECK_INTERVAL=10 #间隔多久判断一次是否需要符号执行
+CRASH_CHECK_INTERVAL=0 #间隔多久判断一次是否需要符号执行
 
 # how long to fuzz before giving up in seconds
 FUZZ_TIMEOUT=1  #这个好像没有用到
