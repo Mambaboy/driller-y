@@ -2,7 +2,6 @@ eclipse.preferences.version=1
 encoding//bin/driller/listen.py=utf-8
 encoding//distance\u5BF9\u6BD4\u5B9E\u9A8C\u811A\u672C/afl_plot_pic.py=utf-8
 encoding//distance\u5BF9\u6BD4\u5B9E\u9A8C\u811A\u672C/make_pic_now.py=utf-8
-encoding//driller-tools/get_trace.py=utf-8
 encoding//driller/config.py=utf-8
 encoding//driller/driller.py=utf-8
 encoding//driller/run_cgc_many_task.py=utf-8
