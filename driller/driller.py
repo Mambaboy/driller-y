@@ -46,7 +46,7 @@ class Driller(object):
         '''
 
         self.binary      = binary
-        # redis channel identifier
+        # redis crash_target_dir identifier
         self.identifier  = os.path.basename(binary) #去除路径信息,得到程序名称
         self.input       = input
         self.input_data_path=input_data_path 
@@ -337,7 +337,7 @@ class Driller(object):
 
 #-----------原始的  , 发现新路径到终点,再生成    
         #计时
-        while len(pg.active) and accumulated < 1024: #修改这里的逻辑,每次新发现一个state,就生成
+        while len(pg.active) and accumulated < config.SYM_STATE_MAX: #修改这里的逻辑,每次新发现一个state,就生成
             if  self.single_sy_ex_timed_out(start_time):
                 l.info("single_sy_ex_timed_out time out ")
                 break
@@ -461,9 +461,9 @@ class Driller(object):
 
         if self.redis:
             # publish it out in real-time so that inputs get there immediately
-            channel = self.identifier + '-generated'
+            crash_target_dir = self.identifier + '-generated'
 
-            self.redis.publish(channel, pickle.dumps({'meta': key, 'data': generated, "tag": self.tag})) #将结果发送到服务器,然后会保存到disk
+            self.redis.publish(crash_target_dir, pickle.dumps({'meta': key, 'data': generated, "tag": self.tag})) #将结果发送到服务器,然后会保存到disk
         else:
             l.info("generated: %s", generated.encode('hex'))
 

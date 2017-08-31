@@ -58,5 +58,13 @@ FUZZER_WORK_DIR="/tmp/driller"
 ##add by yyy----------------------------------
 #the seed directory
 SEED='/home/xiaosatianyu/Desktop/driller-desk/seed'
+AFL_FAST='/home/xiaosatianyu/workspace/git/aflfast/afl-fuzz'
+AFL_YYY='/home/xiaosatianyu/workspace/git/afl-yyy/afl-fuzz'
+AFL='/home/xiaosatianyu/workspace/git/afl/afl-fuzz'
+AFL_Shellfish_unix='/home/xiaosatianyu/workspace/git/driller-yyy/shellphish-afl/bin/afl-unix/afl-fuzz'
+FUZZ_LIMIT=10*60
+SYM_STATE_MAX=1024
 
-
+CRASH_DIR="/home/xiaosatianyu/Desktop/driller-desk/CRASH"
+PASSWD_SUDO='1'
+AFL_START_SCRIPT='/home/xiaosatianyu/workspace/git/driller-yyy/driller/bin/driller/start_for_driller.sh'

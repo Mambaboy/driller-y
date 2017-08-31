@@ -4,6 +4,9 @@ driller/config.py
 driller/driller.py
 driller/local_callback.py
 driller/pcap.py
+driller/run_cgc_many_task.py
+driller/run_sole_cgc_tasks.py
+driller/sort_strategy.py
 driller/tasks.py
 driller.egg-info/PKG-INFO
 driller.egg-info/SOURCES.txt

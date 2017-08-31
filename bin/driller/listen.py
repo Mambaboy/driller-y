@@ -7,6 +7,7 @@ import sys
 import redis
 import logging
 import cPickle as pickle
+from driller import *
 import driller.config as config
 from simuvex.procedures.libc___so___6.sleep import sleep
 import time

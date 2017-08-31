@@ -85,7 +85,7 @@ def drill(binary_path, input_data, input_data_path, bitmap_hash, tag, input_from
 
     driller = Driller(binary_path, input_data, input_data_path, fuzz_bitmap, tag, redis=redis_inst,argv=yargv,
                       add_fs=add_fs,add_env=add_env,add_exclude_sim_pro=add_exclude_sim_pro,
-                      time_limit_for_pro=time_limit_for_pro, sy_ex_time_limit=10*60
+                      time_limit_for_pro=time_limit_for_pro, sy_ex_time_limit=time_limit_for_pro/3
                       ) 
     try:
         return driller.drill() #
@@ -244,7 +244,7 @@ def start_listener(fzr):
     '''
 
     driller_queue_dir = os.path.join(fzr.out_dir, "driller", "queue") #
-    channel = "%s-generated" % fzr.binary_id  #
+    crash_target_dir = "%s-generated" % fzr.binary_id  #
 
     # find the bin directory listen.py will be installed in
     base = os.path.dirname(__file__)
@@ -255,11 +255,31 @@ def start_listener(fzr):
     if os.path.abspath(base) == "/":
         raise Exception("could not find driller listener install directory")
 
-    args = [os.path.join(base, "bin", "driller", "listen.py"), driller_queue_dir, channel]
+    args = [os.path.join(base, "bin", "driller", "listen.py"), driller_queue_dir, crash_target_dir]
+    p = subprocess.Popen(args) #这里可能不在虚拟环境中
+
+    # add the proc to the fuzzer's list of processes
+    fzr.procs.append(p) #
+    
+    
+def start_collecting_crash(fzr):
+    '''
+    collecting the crash generated to a target config.CRASH, 这个进程每隔1分钟运行一下, 复制crash到指定的目录
+    '''    
+    crash_source_dir = fzr.out_dir #
+    crash_target_dir=config.CRASH_DIR
+    # find the bin directory listen.py will be installed in
+    base = os.path.dirname(__file__)
+    while not "bin" in os.listdir(base) and os.path.abspath(base) != "/":
+        base = os.path.join(base, "..")
+    if os.path.abspath(base) == "/":
+        raise Exception("could not find driller listener install directory")
+    args = [os.path.join(base, "bin", "driller", "collect_crash.py"), crash_source_dir, crash_target_dir,fzr.binary_path]
     p = subprocess.Popen(args) 
 
     # add the proc to the fuzzer's list of processes
     fzr.procs.append(p) #
+    
 
 def clean_redis(fzr):
     redis_inst = redis.Redis(connection_pool=redis_pool)
@@ -281,17 +301,29 @@ def clean_redis(fzr):
 
 
 
-@app.task  
-def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sorted,strategy_id):
+#@app.task  
+def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sorted,strategy_id,time_limit,qemu=True,multi_afl=False):
     '''
     @param strategy_id: the id of strategy, 0,1,2,3,4,5,6,7 
+    @param time_limit: the time to fuzz 
     '''
-    #     return
+    #start the redis and enable afl
+    password=config.PASSWD_SUDO
+    base = os.path.dirname(__file__)
+    while not "bin" in os.listdir(base) and os.path.abspath(base) != "/":
+        base = os.path.join(base, "..")
+    if os.path.abspath(base) == "/":
+        raise Exception("could not find driller listener install directory")
+    script_path=os.path.join(base, "bin", "driller", "start_for_driller.sh")
+    if not os.path.exists(script_path):
+        l.error("there is not start script")
+    os.system('echo %s | sudo -S sh %s' %(password, script_path) )
+    
     binary=os.path.basename(binary_path)
     #如果tmp中,就忽略
-    if os.path.exists( os.path.join("/tmp/driller",binary)  ):
-        l.info("%s has been in tmp, start the next" % binary)
-        return
+#     if os.path.exists( os.path.join("/tmp/driller",binary)  ):
+#         l.info("%s has been in tmp, start the next" % binary)
+#         return
     
     l.info("beginning to fuzz \"%s\"", binary)
     seeds=[]
@@ -301,12 +333,8 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sor
         with open(os.path.join(seed_dir, seed), 'rb') as f:  
             seeds.append(f.read())
             f.close()
-    ##end--------------------------------------------------------
     
     # TODO enable dictionary creation, this may require fixing parts of the fuzzer module
-    #fzr = fuzzer.Fuzzer(binary_path, config.FUZZER_WORK_DIR, config.FUZZER_INSTANCES, seeds=seeds, create_dictionary=True)
-    
-    #no dictionary
     fzr = fuzzer.Fuzzer(binary_path, 
                         config.FUZZER_WORK_DIR, 
                         config.FUZZER_INSTANCES,
@@ -315,9 +343,10 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sor
                         afl_engine=afl_engine,
                         input_from=input_from,
                         afl_input_para=afl_input_para,
-                        time_limit=18*60, #second fuzz and symbolic execution time
+                        time_limit=time_limit, #second fuzz and symbolic execution time
                         comapre_afl=comapre_afl,
-                        strategy_id=strategy_id
+                        strategy_id=strategy_id,
+                        multi_afl=multi_afl
                         )
     
     early_crash = False
@@ -325,6 +354,9 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sor
         fzr.start() #
         # start a listening for inputs produced by driller 
         start_listener(fzr)
+        
+        #start a listenin for collecting crashes
+        start_collecting_crash(fzr)
 
         # clean all stale redis data
         clean_redis(fzr)
