@@ -46,7 +46,7 @@ class Driller(object):
         '''
 
         self.binary      = binary
-        # redis crash_target_dir identifier
+        # redis crash_binary_dir identifier
         self.identifier  = os.path.basename(binary) #去除路径信息,得到程序名称
         self.input       = input
         self.input_data_path=input_data_path 
@@ -461,9 +461,9 @@ class Driller(object):
 
         if self.redis:
             # publish it out in real-time so that inputs get there immediately
-            crash_target_dir = self.identifier + '-generated'
+            crash_binary_dir = self.identifier + '-generated'
 
-            self.redis.publish(crash_target_dir, pickle.dumps({'meta': key, 'data': generated, "tag": self.tag})) #将结果发送到服务器,然后会保存到disk
+            self.redis.publish(crash_binary_dir, pickle.dumps({'meta': key, 'data': generated, "tag": self.tag})) #将结果发送到服务器,然后会保存到disk
         else:
             l.info("generated: %s", generated.encode('hex'))
 

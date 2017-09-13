@@ -12,28 +12,169 @@ import subprocess
 import signal
 import angr
 import json
+from __builtin__ import str
+import hashlib
 
 l = logging.getLogger("driller.collect_crash")
 
+
+
+##配置-----------------------------
 ''' 
 listen for new inputs produced by driller
-
 :param crash_source_dir: directory to places new inputs
-:param crash_target_dir: redis crash_target_dir on which the new inputs will be arriving
+:param crash_binary_dir: redis crash_binary_dir on which the new inputs will be arriving
 '''
-def dynamic_trace(tracer_qemu,input_path,target_binary,output_dir,test_from,input_from,add_env=None):
+#arg1
+crash_source_dir = sys.argv[1].strip()  #完整的目录,有很多fuzzing引擎
+print ("crash_source_dir is %s " % crash_source_dir)
+if not os.path.exists(crash_source_dir):
+    l.error("not source dir")
+#arg2
+crash_dir = sys.argv[2].strip()  #总的目录
+if not os.path.exists(crash_dir):
+    os.mkdir(crash_dir)
+print ("crash_dir is %s" % crash_dir)
+#arg3
+binary_path=sys.argv[3].strip() 
+binary=os.path.basename(binary_path).strip()
+
+#the target to copy
+crash_binary_dir=os.path.join(crash_dir,binary) 
+print crash_binary_dir 
+if not os.path.exists(crash_binary_dir):
+    os.mkdir(crash_binary_dir)
+
+
+#从对应的json读取信息
+info_dict=dict()
+json_path=os.path.join(crash_dir ,binary+'.json') #每个目标程序下
+#如果有,则从原来的json中读取
+if os.path.exists(json_path):
+    f=open(json_path,'rt')
+    info_dict=json.load(f)#是一个字典
+    f.close()
+    
+#读取CBs.json
+global_json=config.Global_json
+if os.path.exists(global_json):
+    f=open(global_json,'rt')
+    global_dict=json.load(f)#是一个字典
+    f.close()
+else:
+    l.error("no global json")
+  
+cb_dir=global_dict["CBDir"] 
+
+for i in os.listdir(cb_dir):
+    if ".json" in i:
+        cb_json_path=os.path.join(cb_dir,i) 
+        break
+f=open(cb_json_path,'rt')
+cb_dict=json.load(f)#是一个字典
+f.close()
+flag=False
+for item in cb_dict["CBs"]: #item是list
+    if os.path.basename(item["CB"]) == binary:
+        flag=True
+        Round= item["Round"]
+        ChallengeID=item["ChallengeID"]
+        CB=item["CB"]
+        PullTime=item["PullTime"]
+        ReadAddress=item["ReadAddress"]
+        WriteAddress=item["WriteAddress"]
+        WriteValue=item["WriteValue"]
+        OWEIP=item["OWEIP"]
+        break
+
+if not flag:    
+    Round= 0
+    ChallengeID=65
+    CB=binary_path
+    PullTime="time here",
+    ReadAddress="0xdeadbeaf"
+    WriteAddress="0xdeadbeaf"
+    WriteValue="0xdeadbeaf"
+    OWEIP="0xdeadbeaf"
+
+#准备目标程序的json
+#第一次生成 BasicInfo
+if not info_dict.has_key("BasicInfo"):
+    info_dict["BasicInfo"]={
+                    "Round": Round,
+                    "ChallengeID": ChallengeID,
+                    "CB": CB,
+                    "PullTime": PullTime,
+                    "ReadAddress": ReadAddress,
+                    "WriteAddress": WriteAddress,
+                    "WriteValue": WriteValue,
+                    "OWEIP": OWEIP
+        }
+#第一次生成Crashes
+if not info_dict.has_key("Crashes"):
+    info_dict["Crashes"]=list() #针对当前程序，新建一个字典
+
+#读取crash point
+crash_address_path=os.path.join(crash_binary_dir,"crash_address") #保存crash点的文件
+crash_block_set=set()
+#读取已有崩溃点信息
+if os.path.exists(crash_address_path):
+    with open(crash_address_path,"r") as f:
+        while 1:
+            line= f.readline().split('\n')[0]
+            if not line :
+                break
+            if len(line)>0 :
+                crash_block_set.update([line])
+
+
+# 记录已经测试过的测试用例目录加文件名称
+cache_list=set() 
+
+
+#old_block_set=crash_block_set.copy()
+
+#configure
+#配置对应的qemu
+qemu_dir=config.collect_qemu #来自于tracer
+#自适应
+p = angr.Project(binary_path)
+platform = p.arch.qemu_name
+if platform == 'i386':
+    tracer_qemu = os.path.join(qemu_dir, "shellphish-qemu-linux-i386")
+elif platform == 'x86_64': 
+    tracer_qemu = os.path.join(qemu_dir, "shellphish-qemu-linux-x86_64")
+elif platform == 'cgc': 
+    tracer_qemu = os.path.join(qemu_dir, "shellphish-qemu-cgc-tracer")
+else:
+    print "no qemu\n"
+##结束配置
+
+##各种函数------------------------------------------------------------------------------
+#判断唯一性                
+def run(test_path):
+    test_from="crash"
+    input_from="stdin"
+   
+    #筛选测试用例
+    input_data_path=test_path
+    #返回信号和崩溃点
+    signal,crash_address=dynamic_trace(tracer_qemu,input_data_path,binary_path,test_from,input_from)
+    signal=str(signal)
+    return (signal, crash_address)
+
+def dynamic_trace(tracer_qemu,input_path,target_binary,test_from,input_from,add_env=None):
         '''
         record the executed BBs of a testcase
         @param input_from: read from file or stdin 
         '''
+        signal=0 #默认正常退出
         lname = tempfile.mktemp(dir="/dev/shm/", prefix="tracer-")
         args = [tracer_qemu]
         
         is_crash_case = False  # 处理crash时的flag,只记录崩溃处的基本块 ba
         crash_addr=[]
-        
         args += ["-d", "exec", "-D", lname, target_binary]
-        
         if input_from=="file":
             args += [input_path]
         elif input_from=="stdin":
@@ -47,9 +188,9 @@ def dynamic_trace(tracer_qemu,input_path,target_binary,output_dir,test_from,inpu
                     args,
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
-                    stderr=devnull,
-                    env=add_env
+                    stderr=devnull
                     )
+                    
             #如果是stdin程序 
             if input_from=="stdin":
                 f=open(input_path, 'rb')
@@ -66,6 +207,7 @@ def dynamic_trace(tracer_qemu,input_path,target_binary,output_dir,test_from,inpu
                 if 1:
                     l.info("input caused a crash (signal %d)\
                             during dynamic tracing", abs(ret))
+                    signal=abs(ret)
                     l.info("entering crash mode")
                     is_crash_case =True #表示这是一个crash测试用例
                     #print input_path
@@ -83,10 +225,11 @@ def dynamic_trace(tracer_qemu,input_path,target_binary,output_dir,test_from,inpu
 #         addrs = [v.split('[')[1].split(']')[0]
 #                  for v in trace.split('\n')
 #                  if v.startswith('Trace')] # 得到所有的基本块地址,删掉了别的内容 str类型
-        
-        addrs = [v.split('[')[1] for v in trace.split('\n') if v.startswith('Trace')] # 得到所有的基本块地址,这里保留函数名称 str类型
-        addrs_set=set()
-        addrs_set.update(addrs)  # 去掉重复的轨迹
+            if len(trace)==0:
+                return (signal,None) # None 表示没有收集到路径 ，[]表示没有奔溃点
+        #addrs = [v.split('[')[1].split(']')[0] for v in trace.split('\n') if v.startswith('Trace')] # 得到所有的基本块地址,这里保留函数名称 str类型
+        #addrs_set=set()
+        #addrs_set.update(addrs)  # 去掉重复的轨迹
         
         # grab the faulting address
         if is_crash_case:
@@ -94,101 +237,105 @@ def dynamic_trace(tracer_qemu,input_path,target_binary,output_dir,test_from,inpu
             #print trace
             #print trace.split('\n')[-2]
             #print trace.split('\n')[-1]#这个是空格
-            crash_addr = [trace.split('\n')[-2].split('[')[1]]         #最后一个基本块 address 奔溃点的地址
-        
-        #输出每个测试用例的轨迹
-        #配置每个测试用例的输出名称
-        input_name =os.path.basename(input_path)
-        input_name = 'id'+input_name.split("id:")[-1].split(",")[0]
-        
+            crash_addr = [ trace.split('\n')[-2].split('[')[1].split(']')[0] ]         #最后一个基本块 address 奔溃点的地址  
         os.remove(lname)#删除记录测试用例轨迹的临时文件
-        return (addrs,crash_addr,addrs_set)  #返回一个list  如果是crash,addrs是包括最后一个的    
+        return (signal,crash_addr)  #
 
 
-crash_source_dir = sys.argv[1]  #完整的目录,有很多fuzzing引擎
-crash_target_dir = sys.argv[2]
-binary_path=sys.argv[3]
-binary=os.path.basename(binary_path)
-tmp_dir=os.path.join("/tmp",binary)
-
-l = logging.getLogger("driller.listen")
-
-if not os.path.exists(crash_source_dir):
-    l.error("no crash_source_dir")
-
-#the target to copy
-crash_target_dir=os.path.join(crash_target_dir,binary)  
-if not os.path.exists(crash_target_dir):
-    os.mkdir(crash_target_dir)
-
-#创建临时目录    
-if os.path.exists(tmp_dir):
-    shutil.rmtree(tmp_dir)
-os.mkdir(tmp_dir)
-
-#创建json
-json_path=os.path.join(crash_target_dir,"information.json")
-
-#crash point
-crash_block_set=set()
+def filter_out(tc_path):
+    signal,crash_address=run(tc_path)
+    if signal == '0':
+        return #表示没有崩溃
+    
+    Unique="error-to-judge"
+    CrashAddress="error-to-get"
+    #如果不能收集奔溃点
+    if crash_address is None:
+        tag="no_address"
+        new_path=os.path.join(crash_binary_dir,tag,signal,tc[0:9])+'_'+subdir+'_'+binary #重命名
+        if not os.path.exists(os.path.dirname(new_path)):
+            os.makedirs(os.path.dirname(new_path)) #创建多层目录 
+        shutil.copyfile(tc_path, new_path) #copy to the tmp dir
+    #如果可以收集崩溃点，且是新的
+    elif len(crash_address)>0 and not crash_address[0] in crash_block_set:
+        if not os.path.exists(os.path.join(crash_binary_dir,signal)):
+            os.makedirs(os.path.join(crash_binary_dir,signal))
+        new_path=os.path.join(crash_binary_dir,signal,tc[0:9])+'_'+subdir+'_'+binary #重命名
+        if os.path.exists(new_path): #是否已经存在了   
+            return
+        crash_block_set.update(crash_address) #记录的是崩溃处的地址
+        shutil.copyfile(tc_path, new_path) #copy to the tmp dir 
+        Unique="true"
+        CrashAddress=crash_address[0]
+    #如果可以收集崩溃点，但是重复的   
+    elif  crash_address[0] in crash_block_set:
+        tag="redundant"
+        new_path=os.path.join(crash_binary_dir,tag,signal,tc[0:9])+'_'+subdir+'_'+binary #重命名
+        tmp_path=os.path.join(crash_binary_dir,signal,tc[0:9])+'_'+binary+'_traffic' #如果已经放在uniqe目录了
+        # 如果已经收集过了,既有对应文件了
+        if os.path.exists(new_path) or os.path.exists(tmp_path):
+            return
+        
+        if not os.path.exists(os.path.dirname(new_path)):
+            os.makedirs(os.path.dirname(new_path)) #创建多层目录
+             
+        shutil.copyfile(tc_path, new_path) #copy to the tmp dir
+        Unique="false"
+        CrashAddress=crash_address[0]
+        
+    #对应的information中添加信息
+    Signal=signal
+    #计算hash
+    with open(new_path,'rb') as f:
+        md5obj = hashlib.md5()
+        md5obj.update(f.read())
+        Hash = md5obj.hexdigest()
+    CrashTime=time.strftime('%H:%M:%S',time.localtime(time.time()))
+    CrashFileName=new_path
+    
+    crash_item = {
+                "CrashTime": CrashTime,
+                "Signal": Signal,
+                "CrashAddress": CrashAddress,
+                "Hash": Hash,
+                "Unique":Unique,
+                "CrashFile": CrashFileName
+    }
+    info_dict["Crashes"].append(crash_item)#增加一个
+        
+#开始循环
 while(1):
-    time.sleep(30)#每隔30秒运行一次
-    #先复制到一个临时目录,改名
-    for subdir in os.listdir(crash_source_dir):
-        if "driller" in subdir:
+    #遍历新的目录
+    for subdir in sorted(os.listdir(crash_source_dir)):
+        if "driller" in subdir or "traffic" in subdir:
             continue
         sub_crash_path=os.path.join(crash_source_dir,subdir,"crashes")
         if not os.path.exists(sub_crash_path):
             time.sleep(10)
-        for tc in os.listdir(sub_crash_path):
+        #遍历crash
+        for tc in sorted(os.listdir(sub_crash_path)):
             if 'README' in tc :
                 continue
-            #rename
+            #mark the tag
             tc_path=os.path.join(sub_crash_path,tc)
-            new_path=os.path.join(tmp_dir,tc[0:9])+'_'+subdir+'_'+binary
-            #copy for only one time
-            if not os.path.exists(new_path):
-                shutil.copyfile(tc_path, new_path) #copy to the tmp dir
-    #end rename and copy
+            tc_tag=os.path.join(subdir,tc) #放在 cache_list 中的 换个进程就没有了,重跑方式会有太多的重复
+            if tc_tag in cache_list:
+                continue
+            else:
+                cache_list.update([tc_tag])
+            #筛选
+            filter_out(tc_path)
     
-    #配置对应的qemu
-    qemu_dir="/home/xiaosatianyu/workspace/git/driller-yyy/shellphish-qemu/shellphish_qemu/bin" #来自于tracer
-    #自适应
-    p = angr.Project(binary_path)
-    platform = p.arch.qemu_name
-    if platform == 'i386':
-        tracer_qemu = os.path.join(qemu_dir, "shellphish-qemu-linux-i386")
-    elif platform == 'x86_64': 
-        tracer_qemu = os.path.join(qemu_dir, "shellphish-qemu-linux-x86_64")
-    elif platform == 'cgc': 
-        tracer_qemu = os.path.join(qemu_dir, "shellphish-qemu-cgc-tracer")
-    else:
-        print "no qemu\n"
+    #save the json
+    with open(json_path,"wt") as f:
+        #f.write(json.dumps(information_dict))
+        json.dump(info_dict,f) #ok
         
-    output_dir=None
-    test_from="crash"
-    input_from="stdin"
-    
-    #filter the crash, 要逆序排列
-    crash_list=os.listdir(tmp_dir)
-    crash_list.sort(reverse=True) 
-    #筛选测试用例
-    for crash_input in crash_list:
-        input_data_path = os.path.join(tmp_dir, crash_input) 
-        addrs,crash_address,_=dynamic_trace(tracer_qemu,input_data_path,binary_path,output_dir,test_from,input_from)#记录对应测试用例的轨迹
-        #得到崩溃点
-        #这里可以使用set得到不重复的 trace
-        if len(crash_address)>0 and not crash_address[0] in crash_block_set:
-            crash_block_set.update(crash_address) #记录的是崩溃处的地址
-            
-            #copy to the target dir
-            new_path=os.path.join(crash_target_dir,crash_input)
-            if not os.path.exists(new_path):
-                shutil.copyfile(input_data_path, new_path) #copy to the target dir
-                #这里应该要往jason中加一些内容
-                test_info={'bigberg': 1 ,"test":2}
-                with open(json_path,"a") as f:
-                    json.dump(test_info,f) #ok
-                    json.dump('\n',f) #ok
-                
-                
+    #save the crash点
+    with open(crash_address_path,"wt") as f:
+        for address in crash_block_set:
+            f.write(address)
+            f.write('\n')
+        
+    #print "wait for another"
+    time.sleep(10)#每隔30秒运行一次
