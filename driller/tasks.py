@@ -344,6 +344,28 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sor
     
     #根据CBs 判断, 如果tmp中有,说明已经跑过了
     try:
+        #读取global json
+        global_json=config.Global_json
+        if os.path.exists(global_json):
+            f=open(global_json,'rt')
+            info_dict=json.load(f)#是一个字典
+            f.close()
+        else:
+            l.error("no global json")
+        
+        control_json_path=os.path.join( info_dict["ControlDir"],"control.json")
+        if os.path.exists(control_json_path):
+            f=open(control_json_path,'r')
+            control_dict=json.load(f)#是一个字典
+            f.close()
+            for name,value in control_dict.items():
+                if name==binary:
+                    if value["Continue"] is False:
+                        return
+    except Exception as e:
+        pass
+    
+    try:
         CBs_json=os.path.join(os.path.dirname(binary_path),"CBs.json")
         f=open(CBs_json,'rt')
         CBs_dict=json.load(f)#是一个字典

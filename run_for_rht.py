@@ -44,16 +44,18 @@ class Collect_Traffic():
         self.kill()
 
 def start(afl_engine,robot):
-    #读取json
+    #读取global json
     global_json=config.Global_json
     #从原来的json中读取
-    if os.path.exists(global_json):
-        f=open(global_json,'rt')
-        info_dict=json.load(f)#是一个字典
-        f.close()
-    else:
-        l.error("no global json")
-        
+    try:
+        if os.path.exists(global_json):
+            f=open(global_json,'rt')
+            info_dict=json.load(f)#是一个字典
+            f.close()
+        else:
+            l.error("no global json")
+    except Exception as e:
+        return
     #读取watch dog
     freq=info_dict["WatchDog"]["FeedInterval"]
     feed= os.path.join(info_dict["ShareDir"],"dogfood")
@@ -101,9 +103,13 @@ def start(afl_engine,robot):
                     if ".json" in i:
                         cb_json_path=os.path.join(binary_dir,i) 
                         break
-                f=open(cb_json_path,'rt')
-                cb_dict=json.load(f)#是一个字典
-                f.close()
+                try:    
+                    f=open(cb_json_path,'rt')
+                    cb_dict=json.load(f)#是一个字典
+                    f.close()
+                except Exception as e:
+                    continue
+                
                 for item in cb_dict["CBs"]:
                     if os.path.exists(item["CB"]):
                         os.chmod(item["CB"], stat.S_IRWXU|stat.S_IRWXG|stat.S_IRWXO);
@@ -115,6 +121,7 @@ def start(afl_engine,robot):
             
             for binary_path in jobs:
                 binary_path = binary_path.encode("ascii") 
+                
                 driller.tasks.fuzz(binary_path, input_from,afl_input_para,afl_engine,
                                    comapre_afl=False, inputs_sorted=True,
                                    time_limit=config.FUZZ_LIMIT,
@@ -127,7 +134,8 @@ def start(afl_engine,robot):
 def main(argv):
     afl_engine=config.AFL_Shellfish_unix
     robot=False
-    start(afl_engine,robot)
+    while(1):
+        start(afl_engine,robot)
     
     
 #监听目标目录, 每隔10分钟读取一下目标程序

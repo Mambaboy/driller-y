@@ -187,7 +187,8 @@ def filter_out(tc_path,tracer_qemu,binary_path,crash_binary_dir,crash_block_set,
                 "CrashAddress": CrashAddress,
                 "Hash": Hash,
                 "Unique":Unique,
-                "CrashFile": CrashFileName
+                "CrashFile": CrashFileName,
+                "Engine":"afl"
     }
     binary_dict["Crashes"].append(crash_item)#增加一个
         
@@ -227,22 +228,28 @@ def main():
                 
                 #如果有,则从原来的json中读取
                 if os.path.exists(crash_json_path):
-                    f=open(crash_json_path,'rt')
-                    binary_crash_dict=json.load(f)#是一个字典
-                    f.close()
+                    try: 
+                        f=open(crash_json_path,'rt')
+                        binary_crash_dict=json.load(f)#是一个字典
+                        f.close()
+                    except Exception as e:
+                        continue    
                 else:
                     #生成新的json
                     binary_crash_dict=dict()
-                    
                     #读取CBs.json,获取基本信息
                     cb_dir=global_dict["CBDir"] 
                     for i in os.listdir(cb_dir):
                         if ".json" in i:
                             cb_json_path=os.path.join(cb_dir,i) 
                             break
-                    f=open(cb_json_path,'rt')
-                    cb_dict=json.load(f)#是一个字典
-                    f.close()
+                    try:   
+                        f=open(cb_json_path,'rt')
+                        cb_dict=json.load(f)#是一个字典
+                        f.close()
+                    except Exception as e:
+                        continue
+                    
                     flag=False
                     for item in cb_dict["CBs"]: #item是list
                         if os.path.basename(item["CB"]) == binary:

@@ -50,10 +50,13 @@ if not os.path.exists(crash_binary_dir):
 info_dict=dict()
 json_path=os.path.join(crash_dir ,binary+'.json') #每个目标程序下
 #如果有,则从原来的json中读取
-if os.path.exists(json_path):
-    f=open(json_path,'rt')
-    info_dict=json.load(f)#是一个字典
-    f.close()
+try:
+    if os.path.exists(json_path):
+        f=open(json_path,'rt')
+        info_dict=json.load(f)#是一个字典
+        f.close()
+except Exception as e:
+    pass        
     
 #读取CBs.json
 global_json=config.Global_json
@@ -70,22 +73,26 @@ for i in os.listdir(cb_dir):
     if ".json" in i:
         cb_json_path=os.path.join(cb_dir,i) 
         break
-f=open(cb_json_path,'rt')
-cb_dict=json.load(f)#是一个字典
-f.close()
-flag=False
-for item in cb_dict["CBs"]: #item是list
-    if os.path.basename(item["CB"]) == binary:
-        flag=True
-        Round= item["Round"]
-        ChallengeID=item["ChallengeID"]
-        CB=item["CB"]
-        PullTime=item["PullTime"]
-        ReadAddress=item["ReadAddress"]
-        WriteAddress=item["WriteAddress"]
-        WriteValue=item["WriteValue"]
-        OWEIP=item["OWEIP"]
-        break
+
+flag=False    
+try:   
+    f=open(cb_json_path,'rt')
+    cb_dict=json.load(f)#是一个字典
+    f.close()
+    for item in cb_dict["CBs"]: #item是list
+        if os.path.basename(item["CB"]) == binary:
+            flag=True
+            Round= item["Round"]
+            ChallengeID=item["ChallengeID"]
+            CB=item["CB"]
+            PullTime=item["PullTime"]
+            ReadAddress=item["ReadAddress"]
+            WriteAddress=item["WriteAddress"]
+            WriteValue=item["WriteValue"]
+            OWEIP=item["OWEIP"]
+            break
+except Exception as e:
+    pass        
 
 if not flag:    
     Round= 0
@@ -299,7 +306,8 @@ def filter_out(tc_path):
                 "CrashAddress": CrashAddress,
                 "Hash": Hash,
                 "Unique":Unique,
-                "CrashFile": CrashFileName
+                "CrashFile": CrashFileName,
+                "Engine":"AFL"
     }
     info_dict["Crashes"].append(crash_item)#增加一个
         
