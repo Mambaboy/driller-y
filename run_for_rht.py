@@ -66,9 +66,7 @@ def start(afl_engine,robot):
     for item in os.listdir(feed):
         if "afl" in item:
             os.remove(os.path.join(feed,item))
-      
     dog.start()
-    
     # start traffic
     trafic=Collect_Traffic()
     trafic.start()
@@ -110,6 +108,7 @@ def start(afl_engine,robot):
                 except Exception as e:
                     continue
                 
+                #这个怎么排序呢
                 for item in cb_dict["CBs"]:
                     if os.path.exists(item["CB"]):
                         os.chmod(item["CB"], stat.S_IRWXU|stat.S_IRWXG|stat.S_IRWXO);
@@ -118,10 +117,9 @@ def start(afl_engine,robot):
                 
             l.info("%d binaries found", len(jobs))
             l.debug("binaries: %r", jobs)
-            
+            jobs.sort(reverse=True)
             for binary_path in jobs:
                 binary_path = binary_path.encode("ascii") 
-                
                 driller.tasks.fuzz(binary_path, input_from,afl_input_para,afl_engine,
                                    comapre_afl=False, inputs_sorted=True,
                                    time_limit=config.FUZZ_LIMIT,

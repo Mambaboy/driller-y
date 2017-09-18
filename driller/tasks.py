@@ -371,21 +371,23 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sor
         CBs_dict=json.load(f)#是一个字典
         f.close()
         binary_num=len(CBs_dict["CBs"])
-        if os.path.exists( os.path.join(config.FUZZER_WORK_DIR,binary)  ):
-            l.info("%s has been in tmp, start the next" , binary)
-            #查看是否所有的程序都跑完了 比较driller目录下的数量和目标程序的数量
+        if os.path.exists( os.path.join(config.FUZZER_WORK_DIR,binary,'sync','fuzzer-master')  ):
+            l.info("%s has been in tmp" , binary)
+            #查看是否所有的程序都跑完了 比较driller目录下的数量和目标程序的数量,判断是否有新的没跑
             if len(os.listdir(config.FUZZER_WORK_DIR)) < binary_num:
+                ##说明新的
                 return
-            else:
-                #重跑机制?
-                l.info("%s resume---------------------------",binary )
-        #防止死机
     except Exception as e:
         pass
+     
+    #重跑机制,就将之间的queue当做seed
+    if os.path.exists( os.path.join(config.FUZZER_WORK_DIR,binary,'sync','fuzzer-master')  ):
+        l.info("%s resume---------------------------",binary )
+        seed_dir =  os.path.join(config.FUZZER_WORK_DIR,binary,'sync','fuzzer-master','queue')
           
     l.info("beginning to fuzz \"%s\"", binary)
     for seed in os.listdir(seed_dir):  # 底下最好不要有其他目录
-        if '.' in seed:
+        if '.' in seed  or '.state' in seed:
             continue
         with open(os.path.join(seed_dir, seed), 'rb') as f:  
             seeds.append(f.read())
@@ -432,20 +434,32 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sor
         # not fzr.found_crash()  and
         while_num=0
         crash_num=0
-        while   not fzr.timed_out(): 
+        while  not fzr.timed_out(): 
             #crash_num=fzr.crashes()  #得到signal 11 和4 的数量 所有引擎的数量
             if driller_engine:
                 if 'fuzzer-master' in fzr.stats and 'pending_favs' in fzr.stats['fuzzer-master']:  
                     if not int(fzr.stats['fuzzer-master']['pending_favs']) > 50000: #
                         l.info("[%s] driller being requested!", binary) 
                         driller_jobs.extend(request_drilling(fzr))  #
-            print "start another while at %d"  %while_num
+            print "start another while at %d,fuzzing %s"  % (while_num,binary)
             while_num+=1           
             time.sleep(config.CRASH_CHECK_INTERVAL) #
-        # make sure to kill the fuzzers when we're done
-        #保存信息到log
-        
-        
+            #检查是否有新的程序来
+            try:
+                CBs_json=os.path.join(os.path.dirname(binary_path),"CBs.json")
+                f=open(CBs_json,'rt')
+                CBs_dict=json.load(f)#是一个字典
+                f.close()
+                binary_num=len(CBs_dict["CBs"])
+                if os.path.exists( os.path.join(config.FUZZER_WORK_DIR,binary,'sync','fuzzer-master')  ):
+                    l.info("%s has been in tmp" , binary)
+                    #查看是否所有的程序都跑完了 比较driller目录下的数量和目标程序的数量,判断是否有新的没跑
+                    if len(os.listdir(config.FUZZER_WORK_DIR)) < binary_num:
+                        ##说明新的
+                        break
+            except Exception as e:
+                pass
+        #end while
         fzr.kill()
         gc.collect()
         

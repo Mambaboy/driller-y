@@ -35,16 +35,16 @@ def run(test_path,tracer_qemu,binary_path):
     #筛选测试用例
     input_data_path=test_path
     #返回信号和崩溃点
-    signal,crash_address=dynamic_trace(tracer_qemu,input_data_path,binary_path,test_from,input_from)
-    signal=str(signal)
-    return (signal, crash_address)
+    cur_signal,crash_address=dynamic_trace(tracer_qemu,input_data_path,binary_path,test_from,input_from)
+    cur_signal=str(cur_signal)
+    return (cur_signal, crash_address)
 
 def dynamic_trace(tracer_qemu,input_path,target_binary,test_from,input_from,add_env=None):
         '''
         record the executed BBs of a testcase
         @param input_from: read from file or stdin 
         '''
-        signal=0 #默认正常退出
+        cur_signal=0 #默认正常退出
         lname = tempfile.mktemp(dir="/dev/shm/", prefix="tracer-")
         args = [tracer_qemu]
         
@@ -79,11 +79,11 @@ def dynamic_trace(tracer_qemu,input_path,target_binary,test_from,input_from,add_
             # did a crash occur?
             if ret < 0:
                 #所有负数都要
-                #if abs(ret) == signal.SIGSEGV or abs(ret) == signal.SIGILL:
-                if 1:
+                if abs(ret) == signal.SIGSEGV: #or abs(ret) == signal.SIGILL:
+                #if 1:
                     l.info("input caused a crash (signal %d)\
                             during dynamic tracing", abs(ret))
-                    signal=abs(ret)
+                    cur_signal=abs(ret)
                     l.info("entering crash mode")
                     is_crash_case =True #表示这是一个crash测试用例
                     #print input_path
@@ -102,7 +102,7 @@ def dynamic_trace(tracer_qemu,input_path,target_binary,test_from,input_from,add_
 #                  for v in trace.split('\n')
 #                  if v.startswith('Trace')] # 得到所有的基本块地址,删掉了别的内容 str类型
             if len(trace)==0:
-                return (signal,None) # None 表示没有收集到路径 ，[]表示没有奔溃点
+                return (cur_signal,None) # None 表示没有收集到路径 ，[]表示没有奔溃点
         #addrs = [v.split('[')[1].split(']')[0] for v in trace.split('\n') if v.startswith('Trace')] # 得到所有的基本块地址,这里保留函数名称 str类型
         #addrs_set=set()
         #addrs_set.update(addrs)  # 去掉重复的轨迹
@@ -115,7 +115,7 @@ def dynamic_trace(tracer_qemu,input_path,target_binary,test_from,input_from,add_
             #print trace.split('\n')[-1]#这个是空格
             crash_addr = [ trace.split('\n')[-2].split('[')[1].split(']')[0] ]         #最后一个基本块 address 奔溃点的地址  
         os.remove(lname)#删除记录测试用例轨迹的临时文件
-        return (signal,crash_addr)  #
+        return (cur_signal,crash_addr)  #
 
 
 def filter_out(tc_path,tracer_qemu,binary_path,crash_binary_dir,crash_block_set,binary_dict):
@@ -130,8 +130,8 @@ def filter_out(tc_path,tracer_qemu,binary_path,crash_binary_dir,crash_block_set,
     @param tc_path: 
     
     '''
-    signal,crash_address=run(tc_path,tracer_qemu,binary_path)
-    if signal == '0':
+    cur_signal,crash_address=run(tc_path,tracer_qemu,binary_path)
+    if cur_signal == '0':
         return #表示没有崩溃
     
     Unique="error-to-judge"
@@ -141,15 +141,15 @@ def filter_out(tc_path,tracer_qemu,binary_path,crash_binary_dir,crash_block_set,
     #如果不能收集奔溃点
     if crash_address is None:
         tag="no_address"
-        new_path=os.path.join(crash_binary_dir,tag,signal,tc[0:9])+'_'+binary+'_traffic' #重命名
+        new_path=os.path.join(crash_binary_dir,tag,cur_signal,tc[0:9])+'_'+binary+'_traffic' #重命名
         if not os.path.exists(os.path.dirname(new_path)):
             os.makedirs(os.path.dirname(new_path)) #创建多层目录 
         shutil.copyfile(tc_path, new_path) #copy to the tmp dir
     #如果可以收集崩溃点，且是新的
     elif len(crash_address)>0 and not crash_address[0] in crash_block_set:
-        if not os.path.exists(os.path.join(crash_binary_dir,signal)):
-            os.makedirs(os.path.join(crash_binary_dir,signal))
-        new_path=os.path.join(crash_binary_dir,signal,tc[0:9])+'_'+binary+'_traffic'#重命名
+        if not os.path.exists(os.path.join(crash_binary_dir,cur_signal)):
+            os.makedirs(os.path.join(crash_binary_dir,cur_signal))
+        new_path=os.path.join(crash_binary_dir,cur_signal,tc[0:9])+'_'+binary+'_traffic'#重命名
         if os.path.exists(new_path): #是否已经存在了   
             return
         crash_block_set.update(crash_address) #记录的是崩溃处的地址
@@ -159,8 +159,8 @@ def filter_out(tc_path,tracer_qemu,binary_path,crash_binary_dir,crash_block_set,
     #如果可以收集崩溃点，但是重复的   
     elif  crash_address[0] in crash_block_set:
         tag="redundant"
-        new_path=os.path.join(crash_binary_dir,tag,signal,tc[0:9])+'_'+binary+'_traffic' #重命名
-        tmp_path=os.path.join(crash_binary_dir,signal,tc[0:9])+'_'+binary+'_traffic' #如果已经放在uniqe目录了
+        new_path=os.path.join(crash_binary_dir,tag,cur_signal,tc[0:9])+'_'+binary+'_traffic' #重命名
+        tmp_path=os.path.join(crash_binary_dir,cur_signal,tc[0:9])+'_'+binary+'_traffic' #如果已经放在uniqe目录了
         # 如果已经收集过了,既有对应文件了
         if os.path.exists(new_path) or os.path.exists(tmp_path):
             return
@@ -172,7 +172,7 @@ def filter_out(tc_path,tracer_qemu,binary_path,crash_binary_dir,crash_block_set,
         CrashAddress=crash_address[0]
         
     #对应的information中添加信息
-    Signal=signal
+    Cur_Signal=cur_signal
     #计算hash
     with open(new_path,'rb') as f:
         md5obj = hashlib.md5()
@@ -183,7 +183,7 @@ def filter_out(tc_path,tracer_qemu,binary_path,crash_binary_dir,crash_block_set,
     
     crash_item = {
                 "CrashTime": CrashTime,
-                "Signal": Signal,
+                "Signal": Cur_Signal,
                 "CrashAddress": CrashAddress,
                 "Hash": Hash,
                 "Unique":Unique,
@@ -209,6 +209,8 @@ def main():
         l.error("no global json")
     
     driller_workplace= global_dict["dig"]["workdir"]
+    if not os.path.exists(driller_workplace):
+        os.makedirs(driller_workplace)
     binary_cache_list=set()
     while(1):
         try:
@@ -343,7 +345,7 @@ def main():
                         f.write(address)
                         f.write('\n')
         except Exception as e:
-            print ("error is %s" %e)
+            print ("error is %s, in collect_traffic,just ignore and waiting" %e)
             continue    
     print "wait for another"
     time.sleep(30)#每隔30秒运行一次

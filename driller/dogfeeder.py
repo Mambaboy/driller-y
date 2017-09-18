@@ -6,17 +6,20 @@ def feed_dog(moduleMark, freq, FoodDir):
     foodCache = ''
     while True:
         # construct food
-        food = moduleMark + '-' + str(time.time())#hashlib.md5(str(datetime.datetime.now())).hexdigest()
-        food = os.path.join(FoodDir, food)
-        # feed dog now
-        if foodCache == '':
-            with open(food, 'w'):
-                pass
-        else:
-            os.rename(foodCache, food)
-        foodCache = food
-#         print ("feed the dog,the food is %s"%food)
-        time.sleep(freq)
+        try:
+            food = moduleMark + '-' + str(time.time())#hashlib.md5(str(datetime.datetime.now())).hexdigest()
+            food = os.path.join(FoodDir, food)
+            # feed dog now
+            if foodCache == '':
+                with open(food, 'w'):
+                    pass
+            else:
+                os.rename(foodCache, food)
+            foodCache = food
+    #         print ("feed the dog,the food is %s"%food)
+            time.sleep(freq)
+        except Exception as e:
+            continue   
 
 class FeedDog:
     """
