@@ -387,7 +387,7 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sor
           
     l.info("beginning to fuzz \"%s\"", binary)
     for seed in os.listdir(seed_dir):  # 底下最好不要有其他目录
-        if '.' in seed  or '.state' in seed:
+        if '.state' in seed:
             continue
         with open(os.path.join(seed_dir, seed), 'rb') as f:  
             seeds.append(f.read())
@@ -452,7 +452,7 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sor
                 f.close()
                 binary_num=len(CBs_dict["CBs"])
                 if os.path.exists( os.path.join(config.FUZZER_WORK_DIR,binary,'sync','fuzzer-master')  ):
-                    l.info("%s has been in tmp" , binary)
+                    l.info("%s has been fuzzed" , binary)
                     #查看是否所有的程序都跑完了 比较driller目录下的数量和目标程序的数量,判断是否有新的没跑
                     if len(os.listdir(config.FUZZER_WORK_DIR)) < binary_num:
                         ##说明新的
@@ -460,11 +460,12 @@ def fuzz(binary_path,input_from,afl_input_para,afl_engine,comapre_afl,inputs_sor
             except Exception as e:
                 pass
         #end while
+        
         fzr.kill()
         gc.collect()
         
-    #except Exception as e:
-    except StopIteration as e:
+    except Exception as e:
+    #except StopIteration as e:
 #     except fuzzer.EarlyCrash:
         fzr.kill()
         gc.collect()
