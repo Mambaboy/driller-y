@@ -74,5 +74,5 @@ AFL_START_SCRIPT='/home/xiaosatianyu/workspace/git/driller-yyy/driller/bin/drill
 ###
 # for RHT
 collect_qemu="/home/xiaosatianyu/workspace/git/driller-yyy/shellphish-qemu/shellphish_qemu/bin"
-Global_json="/home/xiaosatianyu/Desktop/driller-desk/CRASH/CCGCGlobalConfig.json"
+Global_json="/home/xiaosatianyu/workspace/git/driller-yyy/driller/config_for_rhg/CCGCGlobalConfig.json"
 traffic_path="/home/xiaosatianyu/workspace/git/driller-yyy/driller/bin/driller/collect_traffic.py"

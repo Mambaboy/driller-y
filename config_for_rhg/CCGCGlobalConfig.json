@@ -1,0 +1,34 @@
+{
+	"CBDir": "/home/xiaosatianyu/Desktop/driller-desk/binary-unix",
+	"TrafficDir": "/path/to/traffic-directopry",
+	"CrashDir": "/home/xiaosatianyu/Desktop/driller-desk/CRASH",
+	"ControlDir":"/home/xiaosatianyu/Desktop/driller-desk/CRASH",
+	"POVDir": "/path/to/pov-directory",
+	"VerifiedDir": "/path/to/verified-directory",
+	"ResultDir": "/path/to/result-directory",
+	"ShareDir": "/home/xiaosatianyu/Desktop/driller-desk/CRASH",
+	"CoreEngines": {
+		"afl": "/home/cgcc/.virtualenvs/driller/bin/python /home/cgcc/RHT/Dig/driller/driller/run_for_rht.py",
+		"rex": "",
+		"s2e": "/bin/bash /home/cgcc/RHT/starts2e.sh",
+		"master": "",
+		"defense": "",
+		"traffic": "python /home/cgcc/RHT/trafficExtractor/trafficExtractor.py",
+		"verifierH": "python /home/cgcc/RHT/verifierH/verifierH.py",
+		"verifierQ": "/bin/bash /home/cgcc/RHT/verifierQ/verifierQ.sh",
+		"watchdog": ""
+	},
+	"dig": {
+		"workdir": "/tmp/driller"
+	},
+	"verifierQ": {
+		"threadCount": 4
+	},
+	"traffic": {
+		"serverIP": "172.16.5.10"
+	},
+	"WatchDog": {
+		"FeedInterval": 10,
+		"FetchInterval": 12
+	}
+}
