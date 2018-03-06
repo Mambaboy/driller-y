@@ -64,7 +64,7 @@ AFL_YYY='/home/xiaosatianyu/workspace/git/afl-yyy/afl-fuzz'
 AFL='/home/xiaosatianyu/workspace/git/afl/afl-fuzz'
 #AFL_Shellfish_unix='/home/xiaosatianyu/workspace/git/driller-yyy/shellphish-afl/bin/afl-unix/afl-fuzz'
 AFL_Shellfish_unix='/home/xiaosatianyu/workspace/git/afl/afl-fuzz'
-FUZZ_LIMIT=5*60
+FUZZ_LIMIT=None
 SYM_STATE_MAX=1024
 
 CRASH_DIR="/home/xiaosatianyu/Desktop/driller-desk/CRASH"
