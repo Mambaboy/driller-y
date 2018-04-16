@@ -71,7 +71,7 @@ def start(afl_engine,robot):
     trafic=Collect_Traffic()
     trafic.start()
     
-      
+    cycle_num=1
     while(1):
         try:
             #binary_dir=config.BINARY_DIR_UNIX
@@ -118,6 +118,16 @@ def start(afl_engine,robot):
             l.info("%d binaries found", len(jobs))
             l.debug("binaries: %r", jobs)
             jobs.sort(reverse=True)
+            #第一次跑
+            if cycle_num==1:
+                for binary_path in jobs[0:3]:
+                    binary_path = binary_path.encode("ascii") 
+                    driller.tasks.fuzz(binary_path, input_from,afl_input_para,afl_engine,
+                                       comapre_afl=False, inputs_sorted=True,
+                                       time_limit=180,
+                                       multi_afl=True,driller_engine=False)
+            
+            #第二次跑
             for binary_path in jobs:
                 binary_path = binary_path.encode("ascii") 
                 driller.tasks.fuzz(binary_path, input_from,afl_input_para,afl_engine,
@@ -125,13 +135,15 @@ def start(afl_engine,robot):
                                    time_limit=config.FUZZ_LIMIT,
                                    multi_afl=True,driller_engine=False)
             l.info("end task")
+            cycle_num+=1
+            
         except Exception as e:
             #print e
             continue    
 
 def main(argv):
     afl_engine=config.AFL_Shellfish_unix
-    robot=False
+    robot=True
     while(1):
         start(afl_engine,robot)
     
